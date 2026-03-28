@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoResearch - Binary Arbitrage</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+  <h1>AutoResearch Polymarket</h1>
+  <span class="badge">PAPER MODE</span>
+  <span class="badge badge-blue" id="phase-badge">IDLE</span>
+  <span class="ts" id="update-time">Loading...</span>
+</div>
+
+<!-- KPIs -->
+<div class="grid" id="kpi-grid"></div>
+
+<!-- Coin Cards -->
+<div class="coin-cards" id="coin-cards"></div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab active" data-tab="experiments">Experimentos</button>
+  <button class="tab" data-tab="trades">Trades</button>
+  <button class="tab" data-tab="performance">Rendimiento</button>
+  <button class="tab" data-tab="research">Research Log</button>
+</div>
+
+<div class="panel active" id="panel-experiments">
+  <div class="two-col">
+    <div class="card">
+      <h3>Historial de Experimentos</h3>
+      <div id="exp-table"></div>
+    </div>
+    <div class="card">
+      <h3>RAPR Score</h3>
+      <div class="chart-box"><canvas id="ch-rapr"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Experimento Activo</h3>
+    <div id="active-exp">Ninguno</div>
+  </div>
+</div>
+
+<div class="panel" id="panel-trades">
+  <div class="card">
+    <h3>Trades Recientes</h3>
+    <div id="trades-table"></div>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <h3>PnL por Trade</h3>
+      <div class="chart-box"><canvas id="ch-pnl"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Equity Curve</h3>
+      <div class="chart-box"><canvas id="ch-equity"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-performance">
+  <div class="two-col">
+    <div class="card">
+      <h3>PnL por Moneda</h3>
+      <div class="chart-box"><canvas id="ch-coin-pnl"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Gaps Detectados</h3>
+      <div class="chart-box"><canvas id="ch-gaps"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Desglose de Costes</h3>
+    <div id="cost-breakdown"></div>
+  </div>
+</div>
+
+<div class="panel" id="panel-research">
+  <div class="two-col">
+    <div class="card">
+      <h3>results.tsv</h3>
+      <pre id="results-tsv" class="code-block"></pre>
+    </div>
+    <div class="card">
+      <h3>strategy.py (actual)</h3>
+      <pre id="strategy-code" class="code-block"></pre>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

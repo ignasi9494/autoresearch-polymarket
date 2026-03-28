@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+data/research.db
+data/research.db-wal
+data/research.db-shm
+data/dashboard_data.json
+data/strategy_versions/
+data/reports/
+GUIA_COMPLETA.docx
+generate_doc.py
+results.tsv
