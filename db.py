@@ -119,6 +119,8 @@ def init_db():
             p_value REAL,
             improvement_pct REAL,
             result TEXT,
+            llm_reasoning TEXT,
+            mutation_source TEXT DEFAULT 'random',
             started_at TEXT,
             completed_at TEXT,
             created_at TEXT DEFAULT (datetime('now'))

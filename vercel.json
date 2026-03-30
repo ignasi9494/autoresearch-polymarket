@@ -1,0 +1,8 @@
+{
+  "buildCommand": "",
+  "outputDirectory": "dashboard",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/data", "destination": "/api/data.json" }
+  ]
+}

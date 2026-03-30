@@ -1,7 +1,14 @@
 """
-AutoResearch Polymarket - Realistic Paper Trader
-Simulates trades as if real money were at stake.
-Accounts for: orderbook fills, slippage, exact fees, fill probability, latency.
+AutoResearch Polymarket - Paper Trader v2 (Limit Order Simulation)
+
+Simulates LIMIT ORDER arbitrage on 5-minute "Up or Down" markets.
+Key difference from v1: orders don't fill instantly. They sit in the book
+and fill when the market price moves to our level.
+
+Fill probability depends on:
+- Distance from implied price (closer = more likely to fill)
+- Time remaining in window (more time = more chances)
+- Volatility (higher vol = more price movement = more fills)
 """
 
 import math
@@ -11,89 +18,67 @@ from datetime import datetime
 from db import get_db
 
 
-# Polymarket fee formula: fee_rate = price * (1 - price) * 0.022 per side
-GAS_COST = 0.005  # ~$0.005 per tx on Polygon
-
-
+# Polymarket fee formula
 def estimate_fee(price: float) -> float:
-    """Exact Polymarket fee for one side."""
     if price <= 0 or price >= 1:
         return 0.0
     return price * (1 - price) * 0.022
 
 
-def walk_orderbook(asks: list, size_usd: float) -> float:
+GAS_COST = 0.008  # ~$0.008 per tx on Polygon (conservative estimate)
+EXECUTION_DELAY_SECS = 0.5  # Latency: observation -> order on book
+
+
+def limit_fill_probability(bid_price: float, implied_price: float,
+                           secs_left: float, volatility: float) -> float:
     """
-    Walk the orderbook to find the real fill price for a given order size.
-    Returns the volume-weighted average fill price.
-    More realistic than using best_ask - large orders eat into deeper levels.
+    Estimate probability that a limit buy order fills during the window.
+
+    A limit buy at $0.48 fills when someone SELLS at $0.48 (market sell).
+    The closer our bid is to the implied price, the more likely it fills.
+
+    Factors:
+    - distance: how far our bid is from implied (closer = more likely)
+    - time: more time remaining = more chances for price to hit our level
+    - volatility: higher vol = more price swings = more fills
+
+    Returns probability [0.0 - 0.95]
     """
-    if not asks:
+    if implied_price <= 0 or bid_price <= 0:
         return 0.0
 
-    remaining = size_usd
-    total_cost = 0.0
-    total_shares = 0.0
+    # Account for execution latency: we observe now but order hits book later
+    effective_secs_left = secs_left - EXECUTION_DELAY_SECS
+    if effective_secs_left <= 0:
+        return 0.0  # No time for fill after latency
 
-    for level in asks:
-        price = float(level.get("price", 0))
-        size = float(level.get("size", 0))
-        if price <= 0 or size <= 0:
-            continue
+    # Distance from midmarket (in cents)
+    distance = (implied_price - bid_price) * 100  # positive = bid below mid
 
-        level_value = size * price
-        if level_value >= remaining:
-            # This level can fill the rest
-            shares = remaining / price
-            total_cost += remaining
-            total_shares += shares
-            remaining = 0
-            break
-        else:
-            # Consume entire level
-            total_cost += level_value
-            total_shares += size
-            remaining -= level_value
+    if distance <= 0:
+        # Bid is AT or ABOVE implied → very high fill chance
+        return 0.90
 
-    if total_shares <= 0:
-        return 0.0
+    # Base fill probability based on distance
+    # 0 cents away → ~90% fill
+    # 1 cent away → ~70% fill
+    # 2 cents away → ~50% fill
+    # 3 cents away → ~30% fill
+    # 5+ cents away → very low
+    base_prob = math.exp(-0.35 * distance)
 
-    # VWAP = volume-weighted average price
-    vwap = total_cost / total_shares
-    return vwap
+    # Time factor: more time = more price movement = more fills
+    # 300 sec (full window) = 1.0x, 60 sec = 0.5x, 10 sec = 0.1x
+    time_factor = min(1.0, effective_secs_left / 300.0)
+    time_factor = max(0.1, time_factor ** 0.5)  # sqrt for diminishing returns
 
+    # Volatility factor: higher vol = more movement
+    # BTC daily vol ~3% → 5-min vol ~0.2%
+    # Scale: 3% daily → 1.0x, 5% → 1.3x, 1% → 0.6x
+    vol_factor = min(1.5, max(0.5, volatility / 0.03))
 
-def estimate_slippage(depth_usd: float, order_size: float) -> float:
-    """
-    Estimate slippage based on order size relative to orderbook depth.
-    Small orders in deep books = tiny slippage.
-    Large orders in thin books = significant slippage.
-    """
-    if depth_usd <= 0:
-        return 0.005  # 0.5% default if no depth data
-
-    ratio = order_size / depth_usd
-    # Slippage model: quadratic in ratio, capped at 2%
-    slippage = min(ratio * ratio * 0.5, 0.02)
-    return max(slippage, 0.001)  # Minimum 0.1% (market impact always exists)
-
-
-def fill_probability(spread: float, depth_usd: float, size_usd: float) -> float:
-    """
-    Probability that a market order actually fills at the expected price.
-    Wide spreads and thin books = lower fill probability.
-    """
-    if spread <= 0 or depth_usd <= 0:
-        return 0.5
-
-    # Base probability from spread (tighter = better)
-    spread_factor = max(0.3, 1.0 - spread * 10)  # spread=0.01 -> 0.9, spread=0.05 -> 0.5
-
-    # Depth factor (deeper = better)
-    depth_factor = min(1.0, depth_usd / max(size_usd * 3, 50))
-
-    prob = spread_factor * depth_factor
-    return max(0.3, min(0.98, prob))
+    prob = base_prob * time_factor * vol_factor
+    return max(0.02, min(0.95, prob))
 
 
 class RealisticPaperTrader:
@@ -116,105 +101,98 @@ class RealisticPaperTrader:
             self.losing = 0
         conn.close()
 
-        self.pending_trades = []  # Trades waiting for window resolution
+        self.open_orders = []  # Orders waiting to fill
 
-    def execute_binary_arb(self, decision: dict, observation: dict,
-                           experiment_id: int = None, phase: str = None) -> dict:
+    def execute_limit_arb(self, decision: dict, observation: dict,
+                          experiment_id: int = None, phase: str = None) -> dict:
         """
-        Execute a binary arbitrage trade (buy both YES and NO).
-        Uses real orderbook data for realistic simulation.
-        Returns trade dict or None if not filled.
+        Place a LIMIT ORDER pair (buy Up + buy Down).
+        Simulates whether each side fills based on fill probability.
+        Returns trade result dict.
         """
         coin = decision["coin"]
-        size_usd = decision.get("size_usd", 10.0)
-        max_total_cost = decision.get("max_total_cost", 0.995)
+        bid_up = decision["bid_up"]
+        bid_down = decision["bid_down"]
+        size_usd = decision.get("size_usd", 5.0)
 
         # Safety: don't exceed balance
-        if size_usd > self.balance * 0.5:
-            size_usd = self.balance * 0.3
+        total_exposure = size_usd * 2  # Both sides
+        if total_exposure > self.balance * 0.5:
+            size_usd = self.balance * 0.2
         if size_usd < 1.0:
             return None
 
-        half_size = size_usd / 2
+        # Calculate fill probabilities for each side
+        implied_up = observation.get("implied_up", 0.5)
+        implied_down = observation.get("implied_down", 0.5)
+        secs_left = observation.get("secs_left", 300)
+        volatility = observation.get("volatility", 0.03)
 
-        # 1. Walk orderbook for YES side
-        yes_ob = observation.get("orderbook_yes", {})
-        no_ob = observation.get("orderbook_no", {})
+        prob_up = limit_fill_probability(bid_up, implied_up, secs_left, volatility)
+        prob_down = limit_fill_probability(bid_down, implied_down, secs_left, volatility)
 
-        yes_asks = yes_ob.get("asks", [])
-        no_asks = no_ob.get("asks", [])
+        # Simulate fills (independent for each side)
+        filled_up = random.random() < prob_up
+        filled_down = random.random() < prob_down
 
-        if yes_asks:
-            fill_yes = walk_orderbook(yes_asks, half_size)
+        # Both must fill for arbitrage
+        both_filled = filled_up and filled_down
+
+        # Calculate costs and edge
+        total_cost = bid_up + bid_down
+        fee_up = estimate_fee(bid_up)
+        fee_down = estimate_fee(bid_down)
+        total_fees = (fee_up + fee_down) + GAS_COST * 2
+
+        if both_filled:
+            # ARBITRAGE: we own both sides → guaranteed $1.00 payout
+            payout = 1.0
+            shares = size_usd / total_cost  # shares of each token
+            gross = shares * payout
+            net_pnl = gross - size_usd * 2 - total_fees * (size_usd / total_cost)
+            # Simpler: net = (1/total_cost - 1) * size_usd * 2 - fees
+            net_pnl = (1.0 - total_cost) / total_cost * size_usd * 2 - total_fees * size_usd / total_cost
+
+        elif filled_up and not filled_down:
+            # Only Up filled → directional exposure (risky!)
+            # 50/50 chance of winning or losing
+            if random.random() < implied_up:
+                # BTC went up → Up token worth $1.00
+                net_pnl = (1.0 - bid_up) / bid_up * size_usd - fee_up * size_usd / bid_up
+            else:
+                # BTC went down → Up token worth $0.00
+                net_pnl = -size_usd - fee_up * size_usd / bid_up
+
+        elif filled_down and not filled_up:
+            # Only Down filled → directional exposure (risky!)
+            if random.random() < implied_down:
+                net_pnl = (1.0 - bid_down) / bid_down * size_usd - fee_down * size_usd / bid_down
+            else:
+                net_pnl = -size_usd - fee_down * size_usd / bid_down
         else:
-            fill_yes = observation.get("yes_ask", 0)
+            # Neither filled → no trade, no cost
+            net_pnl = 0.0
 
-        if no_asks:
-            fill_no = walk_orderbook(no_asks, half_size)
-        else:
-            fill_no = observation.get("no_ask", 0)
-
-        if fill_yes <= 0 or fill_no <= 0:
-            return None
-
-        # 2. Add slippage
-        depth_yes = observation.get("depth_yes_usd", 0)
-        depth_no = observation.get("depth_no_usd", 0)
-        slip_yes = estimate_slippage(depth_yes, half_size)
-        slip_no = estimate_slippage(depth_no, half_size)
-        fill_yes += fill_yes * slip_yes
-        fill_no += fill_no * slip_no
-        total_slippage = (slip_yes + slip_no) * half_size
-
-        # 3. Check fill probability
-        spread_yes = observation.get("spread_yes", 0)
-        spread_no = observation.get("spread_no", 0)
-        avg_spread = (spread_yes + spread_no) / 2
-        avg_depth = (depth_yes + depth_no) / 2
-        fill_prob = fill_probability(avg_spread, avg_depth, size_usd)
-
-        # Simulate latency (price might move 200-500ms)
-        latency_impact = random.uniform(0, 0.002)  # 0-0.2% price movement
-        fill_yes += fill_yes * latency_impact * random.choice([-1, 1])
-        fill_no += fill_no * latency_impact * random.choice([-1, 1])
-
-        # Clamp to valid range
-        fill_yes = max(0.01, min(0.99, fill_yes))
-        fill_no = max(0.01, min(0.99, fill_no))
-
-        # 4. Calculate fees (EXACT Polymarket formula)
-        fee_yes = estimate_fee(fill_yes) * (half_size / fill_yes) if fill_yes > 0 else 0
-        fee_no = estimate_fee(fill_no) * (half_size / fill_no) if fill_no > 0 else 0
-        total_fees = fee_yes + fee_no + GAS_COST * 2
-
-        # 5. Total cost
-        total_cost = fill_yes + fill_no  # Per-share cost
-        total_outlay = size_usd + total_fees + total_slippage  # Total $ spent
-
-        # 6. Check if arb still exists after ALL costs
-        payout_per_share = 1.0
-        shares = size_usd / total_cost if total_cost > 0 else 0
-        gross_payout = shares * payout_per_share
-        net_pnl = gross_payout - total_outlay
-
-        # Check max cost threshold
-        if total_cost > max_total_cost:
-            return None
-
-        # 7. Simulate fill (random based on probability)
-        filled = random.random() < fill_prob
+        filled = filled_up or filled_down  # At least one side filled
+        arb_filled = both_filled
 
         trade = {
             "coin": coin,
             "size_usd": size_usd,
-            "fill_yes": fill_yes,
-            "fill_no": fill_no,
+            "bid_up": bid_up,
+            "bid_down": bid_down,
             "total_cost": total_cost,
             "fees": total_fees,
-            "slippage": total_slippage,
-            "net_pnl": net_pnl if filled else 0,
+            "net_pnl": net_pnl,
             "filled": filled,
-            "fill_probability": fill_prob,
+            "arb_filled": arb_filled,
+            "filled_up": filled_up,
+            "filled_down": filled_down,
+            "fill_prob_up": prob_up,
+            "fill_prob_down": prob_down,
+            "implied_up": implied_up,
+            "implied_down": implied_down,
+            "edge": decision.get("edge", 0),
             "reason": decision.get("reason", ""),
             "window_end": observation.get("end_date", ""),
             "experiment_id": experiment_id,
@@ -222,10 +200,23 @@ class RealisticPaperTrader:
             "timestamp": datetime.now().isoformat(),
         }
 
-        if filled:
-            # Deduct from balance (money is locked until window resolves)
-            self.balance -= total_outlay
-            self.pending_trades.append(trade)
+        # Update balance
+        if both_filled:
+            self.balance -= size_usd * 2  # Lock both sides
+            self.balance += size_usd * 2 + net_pnl  # Immediate resolution (paper)
+            self.total_pnl += net_pnl
+            self.total_trades += 1
+            self.total_fees += total_fees * size_usd / total_cost
+            self.winning += 1  # Arb is always a win
+        elif filled_up or filled_down:
+            # One-sided fill: risky
+            self.balance += net_pnl
+            self.total_pnl += net_pnl
+            self.total_trades += 1
+            if net_pnl > 0:
+                self.winning += 1
+            else:
+                self.losing += 1
 
         # Save to DB
         conn = get_db()
@@ -234,61 +225,41 @@ class RealisticPaperTrader:
                 total_cost, fees, slippage, net_pnl, filled, reason, window_end)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            experiment_id, phase, coin, size_usd, fill_yes, fill_no,
-            total_cost, total_fees, total_slippage, trade["net_pnl"],
-            1 if filled else 0, trade["reason"], trade["window_end"],
+            experiment_id, phase, coin, size_usd, bid_up, bid_down,
+            total_cost, total_fees, 0,  # no slippage concept for limit orders
+            net_pnl, 1 if arb_filled else 0,
+            f"{'ARB' if arb_filled else 'PARTIAL' if filled else 'MISS'}: {trade['reason']}",
+            trade["window_end"],
         ))
         conn.commit()
-        conn.close()
 
-        return trade
-
-    def resolve_trades(self):
-        """
-        Resolve pending trades (window has ended, payout = $1.00).
-        In binary arb, ALL trades that filled are winners (payout = $1 guaranteed).
-        """
-        resolved = []
-        still_pending = []
-
-        for trade in self.pending_trades:
-            # In real system, we'd check if the window has ended.
-            # For simulation, we resolve after recording.
-            # The P&L was already calculated at entry time.
-            self.balance += trade["size_usd"] + trade["net_pnl"]
-            self.total_pnl += trade["net_pnl"]
-            self.total_trades += 1
-            self.total_fees += trade["fees"]
-            if trade["net_pnl"] > 0:
-                self.winning += 1
-            else:
-                self.losing += 1
-
-            trade["resolved"] = True
-            resolved.append(trade)
-
-        self.pending_trades = still_pending
-
-        if resolved:
-            # Update portfolio in DB
-            conn = get_db()
+        # Update portfolio
+        if filled:
             conn.execute("""
                 INSERT INTO portfolio (balance_usd, total_pnl, total_trades,
                     total_fees, winning_trades, losing_trades)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (self.balance, self.total_pnl, self.total_trades,
                   self.total_fees, self.winning, self.losing))
-
-            # Mark trades as resolved
-            for t in resolved:
-                conn.execute("""
-                    UPDATE trades SET resolved=1, resolved_at=datetime('now')
-                    WHERE coin=? AND open_at=? AND resolved=0
-                """, (t["coin"], t.get("timestamp", "")))
             conn.commit()
-            conn.close()
 
-        return resolved
+        conn.close()
+        return trade
+
+    # Legacy compatibility
+    def execute_binary_arb(self, decision: dict, observation: dict,
+                           experiment_id: int = None, phase: str = None) -> dict:
+        """Legacy wrapper - converts old-style decisions to new limit order format."""
+        if decision.get("action") == "LIMIT_BOTH":
+            return self.execute_limit_arb(decision, observation, experiment_id, phase)
+        # Old BUY_BOTH format - convert
+        decision["bid_up"] = observation.get("implied_up", 0.5) - 0.02
+        decision["bid_down"] = observation.get("implied_down", 0.5) - 0.02
+        return self.execute_limit_arb(decision, observation, experiment_id, phase)
+
+    def resolve_trades(self):
+        """No-op for v2 (trades resolve immediately in paper mode)."""
+        return []
 
     def get_portfolio_summary(self) -> dict:
         win_rate = (self.winning / self.total_trades * 100) if self.total_trades > 0 else 0
