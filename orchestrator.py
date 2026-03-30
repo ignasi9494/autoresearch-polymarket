@@ -192,12 +192,12 @@ def run_phase(phase_name: str, duration_mins: float,
     rapr = calculate_rapr(all_trades, hours)
     fill_rate = arb_fills / orders_placed * 100 if orders_placed > 0 else 0
 
-    log(f"\n{'─' * 50}")
+    log(f"\n{'=' * 50}")
     log(f"PHASE {phase_name.upper()} COMPLETE")
     log(f"  Polls: {polls_done} | Orders placed: {orders_placed}")
     log(f"  ARB fills: {arb_fills} | Partial: {partial_fills} | Fill rate: {fill_rate:.0f}%")
     log(f"  PnL: ${total_pnl:+.6f} | RAPR: {rapr:.6f}")
-    log(f"{'─' * 50}\n")
+    log(f"{'=' * 50}\n")
 
     return all_trades
 
