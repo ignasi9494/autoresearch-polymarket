@@ -154,21 +154,13 @@ class RealisticPaperTrader:
             net_pnl = (1.0 - total_cost) / total_cost * size_usd * 2 - total_fees * size_usd / total_cost
 
         elif filled_up and not filled_down:
-            # Only Up filled → directional exposure (risky!)
-            # 50/50 chance of winning or losing
-            if random.random() < implied_up:
-                # BTC went up → Up token worth $1.00
-                net_pnl = (1.0 - bid_up) / bid_up * size_usd - fee_up * size_usd / bid_up
-            else:
-                # BTC went down → Up token worth $0.00
-                net_pnl = -size_usd - fee_up * size_usd / bid_up
+            # PARTIAL: cancel opposite side immediately, no directional risk
+            # Only cost is gas for the one filled order
+            net_pnl = -GAS_COST
 
         elif filled_down and not filled_up:
-            # Only Down filled → directional exposure (risky!)
-            if random.random() < implied_down:
-                net_pnl = (1.0 - bid_down) / bid_down * size_usd - fee_down * size_usd / bid_down
-            else:
-                net_pnl = -size_usd - fee_down * size_usd / bid_down
+            # PARTIAL: cancel opposite side immediately, no directional risk
+            net_pnl = -GAS_COST
         else:
             # Neither filled → no trade, no cost
             net_pnl = 0.0
@@ -209,14 +201,11 @@ class RealisticPaperTrader:
             self.total_fees += total_fees * size_usd / total_cost
             self.winning += 1  # Arb is always a win
         elif filled_up or filled_down:
-            # One-sided fill: risky
-            self.balance += net_pnl
+            # PARTIAL: only gas cost lost (opposite side cancelled)
+            self.balance += net_pnl  # net_pnl = -GAS_COST = -$0.008
             self.total_pnl += net_pnl
             self.total_trades += 1
-            if net_pnl > 0:
-                self.winning += 1
-            else:
-                self.losing += 1
+            self.losing += 1  # Minor loss (gas only)
 
         # Save to DB
         conn = get_db()
