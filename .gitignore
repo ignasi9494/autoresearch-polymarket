@@ -12,3 +12,8 @@ GUIA_COMPLETA.docx
 generate_doc.py
 schedule_task.bat
 setup_schedule.py
+
+# Allow dashboard data for Vercel static deploy
+!dashboard/api/data.json
+
+.vercel
