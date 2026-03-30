@@ -154,12 +154,13 @@ class RealisticPaperTrader:
             net_pnl = (1.0 - total_cost) / total_cost * size_usd * 2 - total_fees * size_usd / total_cost
 
         elif filled_up and not filled_down:
-            # PARTIAL: cancel opposite side immediately, no directional risk
+            # Only Up filled → cancel opposite side, no directional risk
+            # In real trading you'd cancel the Down order immediately
             # Only cost is gas for the one filled order
             net_pnl = -GAS_COST
 
         elif filled_down and not filled_up:
-            # PARTIAL: cancel opposite side immediately, no directional risk
+            # Only Down filled → cancel opposite side, no directional risk
             net_pnl = -GAS_COST
         else:
             # Neither filled → no trade, no cost
@@ -201,8 +202,8 @@ class RealisticPaperTrader:
             self.total_fees += total_fees * size_usd / total_cost
             self.winning += 1  # Arb is always a win
         elif filled_up or filled_down:
-            # PARTIAL: only gas cost lost (opposite side cancelled)
-            self.balance += net_pnl  # net_pnl = -GAS_COST = -$0.008
+            # Partial fill: cancel opposite side, only gas cost lost
+            self.balance += net_pnl  # net_pnl = -GAS_COST
             self.total_pnl += net_pnl
             self.total_trades += 1
             self.losing += 1  # Minor loss (gas only)

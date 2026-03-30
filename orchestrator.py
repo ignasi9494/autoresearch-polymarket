@@ -30,6 +30,7 @@ from experiment_manager import (
     save_strategy_version, init_results_tsv, STRATEGY_PATH
 )
 from llm_advisor import propose_mutation_llm, apply_mutation
+from upload_data import upload_and_push as _upload_to_vercel
 
 # ─── Configuration ──────────────────────────────────────────────────────
 
@@ -38,6 +39,9 @@ PHASE_DURATION_MINS = 60     # 60 min per phase (baseline or test)
 COOLDOWN_MINS = 5            # 5 min between experiments
 OBSERVE_MINS = 15            # 15 min initial observation (warmup)
 MIN_TRADES_TO_EVALUATE = 3   # Minimum trades per arm
+VERCEL_UPLOAD_INTERVAL = 3600  # Upload to Vercel every 60 min (1 hour)
+
+_last_vercel_upload = 0  # Timestamp of last Vercel upload
 
 
 def log(msg):
@@ -176,6 +180,17 @@ def run_phase(phase_name: str, duration_mins: float,
 
             if polls_done % 10 == 0:
                 export_dashboard_data()
+
+            # Upload to Vercel every hour
+            global _last_vercel_upload
+            if time.time() - _last_vercel_upload >= VERCEL_UPLOAD_INTERVAL:
+                try:
+                    log("  [VERCEL] Uploading dashboard data to Vercel...")
+                    _upload_to_vercel()
+                    _last_vercel_upload = time.time()
+                    log("  [VERCEL] Upload complete")
+                except Exception as ve:
+                    log(f"  [VERCEL] Upload failed: {ve}")
 
         except Exception as e:
             log(f"  [ERROR] Poll #{polls_done}: {e}")
