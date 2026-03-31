@@ -9,7 +9,7 @@ Partial fills are cancelled (no directional risk).
 MAX_TOTAL_COST = 0.98  # Max combined bid price for Up+Down
 BID_SPREAD_BASE = 0.5  # Base spread in cents below implied price
 BID_SPREAD = 1.5  # Legacy alias
-MIN_EDGE_CENTS = 0.4  # Minimum profit per trade after fees (cents)
+MIN_EDGE_CENTS = 0.3  # Minimum profit per trade after fees (cents)
 ORDER_SIZE_USD = 25  # Base USD per side
 MAX_ORDERS_PER_POLL = 5  # Max new order pairs per poll cycle
 MIN_SECS_LEFT = 30  # Min seconds remaining to place order
