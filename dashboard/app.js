@@ -226,6 +226,34 @@ function renderExperiments(D) {
       },
     });
   }
+
+  // RAPR line chart (clamped for readability)
+  destroyChart('ch-rapr-line');
+  if (scored.length > 0) {
+    const clampR = (v) => Math.max(-50, Math.min(50, v || 0));
+    const keptIds2 = new Set(kept.map(e => e.id));
+    charts['ch-rapr-line'] = new Chart(document.getElementById('ch-rapr-line'), {
+      type: 'line',
+      data: {
+        labels: scored.map(e => '#' + e.id),
+        datasets: [
+          {label:'Baseline RAPR', data:scored.map(e=>clampR(e.baseline_rapr)), borderColor:'#64748b', borderDash:[4,4], pointRadius:2, tension:.3, borderWidth:1.5},
+          {label:'Test RAPR', data:scored.map(e=>clampR(e.test_rapr)), borderColor:'#06b6d4', backgroundColor:'rgba(6,182,212,.08)', fill:true,
+            pointRadius:scored.map(e=>keptIds2.has(e.id)?7:2),
+            pointBackgroundColor:scored.map(e=>keptIds2.has(e.id)?'#22c55e':'#06b6d4'),
+            tension:.3, borderWidth:2},
+          {label:'Zero', data:scored.map(()=>0), borderColor:'rgba(255,255,255,.1)', borderDash:[2,4], pointRadius:0, borderWidth:1},
+        ]
+      },
+      options: {
+        ...chartOpts('RAPR (clamped -50/+50, green=KEPT)'),
+        scales: {
+          y: {grid:{color:'#1e293b'}, ticks:{color:'#64748b'}, min:-50, max:50},
+          x: {grid:{display:false}, ticks:{color:'#475569', font:{size:7}, maxRotation:45}},
+        },
+      },
+    });
+  }
 }
 
 // ─── Trades ──────────────────────────────────────────────────────
