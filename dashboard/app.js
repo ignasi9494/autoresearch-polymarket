@@ -197,21 +197,33 @@ function renderExperiments(D) {
     ? renderPagination(expPages.page, totalPages, 'expPages')
     : '';
 
-  // RAPR chart
+  // Experiment PnL chart (clamped to readable range)
   destroyChart('ch-rapr');
-  const scored = exps.filter(e => e.test_rapr != null && e.status !== 'proposed').reverse();
+  const scored = exps.filter(e => e.test_pnl != null && e.status !== 'proposed').reverse();
   if (scored.length > 0) {
     const keptIds = new Set(kept.map(e => e.id));
+    // Clamp values to [-20, +20] for readability (outliers get capped)
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v || 0));
     charts['ch-rapr'] = new Chart(document.getElementById('ch-rapr'), {
-      type: 'line',
+      type: 'bar',
       data: {
         labels: scored.map(e => '#' + e.id),
         datasets: [
-          {label:'Baseline', data:scored.map(e=>e.baseline_rapr), borderColor:'#64748b', borderDash:[5,5], pointRadius:3, tension:.3, borderWidth:1.5},
-          {label:'Test', data:scored.map(e=>e.test_rapr), borderColor:'#06b6d4', backgroundColor:'rgba(6,182,212,.1)', fill:true, pointRadius:scored.map(e=>keptIds.has(e.id)?8:3), pointBackgroundColor:scored.map(e=>keptIds.has(e.id)?'#22c55e':'#06b6d4'), tension:.3, borderWidth:2},
+          {label:'Baseline PnL', data:scored.map(e=>clamp(e.baseline_pnl,-20,20)), backgroundColor:scored.map(e=>keptIds.has(e.id)?'rgba(34,197,94,.3)':'rgba(100,116,139,.3)'), borderRadius:3, borderSkipped:false, barPercentage:0.9, categoryPercentage:0.8},
+          {label:'Test PnL', data:scored.map(e=>clamp(e.test_pnl,-20,20)),
+            backgroundColor:scored.map(e=>{
+              if (keptIds.has(e.id)) return 'rgba(34,197,94,.8)';
+              return (e.test_pnl||0) >= 0 ? 'rgba(6,182,212,.6)' : 'rgba(239,68,68,.5)';
+            }), borderRadius:3, borderSkipped:false, barPercentage:0.9, categoryPercentage:0.8},
         ]
       },
-      options: chartOpts('RAPR Score (green dots = KEPT)'),
+      options: {
+        ...chartOpts('PnL por Experimento (capped -$20/+$20, verde=KEPT)'),
+        scales: {
+          y: {grid:{color:'#1e293b'}, ticks:{color:'#64748b', callback:v=>'$'+v.toFixed(0)}, min:-20, max:20},
+          x: {grid:{display:false}, ticks:{color:'#475569', font:{size:7}, maxRotation:45}},
+        },
+      },
     });
   }
 }
