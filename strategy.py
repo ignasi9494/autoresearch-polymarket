@@ -7,7 +7,7 @@ Partial fills are cancelled (no directional risk).
 
 # ─── Tunable Parameters (mutated by AutoResearch) ───────────────────
 MAX_TOTAL_COST = 0.99  # Max combined bid price for Up+Down
-BID_SPREAD = 1.0  # Base spread in cents below implied price
+BID_SPREAD = 0.5  # Base spread in cents below implied price
 MIN_EDGE_CENTS = 0.5  # Minimum profit per trade after fees (cents)
 ORDER_SIZE_USD = 8.0  # Base USD per side
 MAX_ORDERS_PER_POLL = 3     # Max new order pairs per poll cycle
