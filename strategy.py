@@ -18,7 +18,7 @@ ASYMMETRY = -2.0  # Shift between Up/Down bids (cents)
 
 # ─── New v3 Parameters ──────────────────────────────────────────────
 VOL_ADJUSTMENT = True       # Adjust spread by volatility
-DEPTH_MIN = 5.0             # Minimum orderbook depth (USD) to trade
+DEPTH_MIN = 5  # Minimum orderbook depth (USD) to trade
 EDGE_SCALING = True         # Scale position size by edge quality
 
 # Sync aliases (LLM may mutate either BID_SPREAD or BID_SPREAD_BASE)
