@@ -117,8 +117,10 @@ class RealisticPaperTrader:
 
         # Safety: don't exceed balance
         total_exposure = size_usd * 2  # Both sides
-        if total_exposure > self.balance * 0.5:
-            size_usd = self.balance * 0.2
+        import strategy as _strat
+        _max_exp = getattr(_strat, 'MAX_EXPOSURE_PCT', 0.5)
+        if total_exposure > self.balance * _max_exp:
+            size_usd = self.balance * (_max_exp * 0.4)
         if size_usd < 1.0:
             return None
 

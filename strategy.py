@@ -5,31 +5,41 @@ Position sizing proportional to edge quality.
 Partial fills are cancelled (no directional risk).
 """
 
-# ─── Tunable Parameters (mutated by AutoResearch) ───────────────────
-MAX_TOTAL_COST = 0.99  # Max combined bid price for Up+Down
-BID_SPREAD_BASE = 0.5  # Base spread in cents below implied price
-BID_SPREAD = 0.5  # Legacy alias
-MIN_EDGE_CENTS = 0.2  # Minimum profit per trade after fees (cents)
-ORDER_SIZE_USD = 20.0  # Base USD per side
-MAX_ORDERS_PER_POLL = 5  # Max new order pairs per poll cycle
-MIN_SECS_LEFT = 90  # Min seconds remaining to place order
-COINS_TO_TRADE = None       # None = all coins
-ASYMMETRY = -2.0  # Shift between Up/Down bids (cents)
+# ─── PRICING ──────────────────────────────────────────────────────
+MAX_TOTAL_COST = 0.99       # Max combined bid price for Up+Down
+BID_SPREAD_BASE = 0.5       # Base spread in cents below implied price
+ASYMMETRY = -2.0            # Shift between Up/Down bids (cents)
+VOL_REFERENCE = 0.03        # Reference volatility for spread calc
+DEPTH_DIVISOR = 100.0       # Divisor to convert depth to factor
+SPREAD_CLAMP_MIN = 0.5      # Min dynamic spread allowed (cents)
+SPREAD_CLAMP_MAX = 5.0      # Max dynamic spread allowed (cents)
 
-# ─── New v3 Parameters ──────────────────────────────────────────────
-VOL_ADJUSTMENT = True       # Adjust spread by volatility
-DEPTH_MIN = 5  # Minimum orderbook depth (USD) to trade
+# ─── FILTROS ──────────────────────────────────────────────────────
+MIN_EDGE_CENTS = 0.2        # Min profit per trade after fees (cents)
+MIN_SECS_LEFT = 60          # Min seconds remaining to place order
+DEPTH_MIN = 5.0             # Min orderbook depth (USD) per side
+MAX_IMPLIED_SKEW = 0.30     # Max |Up - Down| implied price diff
+MIN_VOLATILITY = 0.005      # Min volatility to trade (skip dead markets)
+
+# ─── SIZING ───────────────────────────────────────────────────────
+ORDER_SIZE_USD = 5.0        # Base USD per side
+EDGE_SCALE_BASE = 0.005     # Edge divisor for position scaling
+MAX_SIZE_MULTIPLIER = 3.0   # Cap for edge scaling multiplier
+MAX_EXPOSURE_PCT = 0.5      # Max % of balance as total exposure
+
+# ─── TIMING ───────────────────────────────────────────────────────
+SKIP_FIRST_N_POLLS = 0      # Skip first N polls per window
+POLL_DELAY_SECS = 0         # Extra delay (secs) before each decision
+
+# ─── SYSTEM ───────────────────────────────────────────────────────
+MAX_ORDERS_PER_POLL = 5     # Max order pairs per poll cycle
+VOL_ADJUSTMENT = True       # Enable dynamic spread by volatility
 EDGE_SCALING = True         # Scale position size by edge quality
+COINS_TO_TRADE = None       # None = all coins
+USE_LLM = True              # True = Gemini agentic, False = random
 
-# Sync aliases (LLM may mutate either BID_SPREAD or BID_SPREAD_BASE)
-try:
-    BID_SPREAD_BASE
-except NameError:
-    BID_SPREAD_BASE = BID_SPREAD
-try:
-    BID_SPREAD
-except NameError:
-    BID_SPREAD = BID_SPREAD_BASE
+# Legacy alias
+BID_SPREAD = BID_SPREAD_BASE
 
 
 def estimate_fee(price: float) -> float:
@@ -51,14 +61,14 @@ def _dynamic_spread(base_spread: float, volatility: float,
         return base_spread
 
     # Volatility factor: BTC ~3% daily -> 1.0x, ETH ~4% -> 0.75x (more aggressive)
-    vol_factor = 0.03 / max(volatility, 0.005)
+    vol_factor = VOL_REFERENCE / max(volatility, 0.005)
 
     # Depth factor: more liquidity = safer to be closer to mid
     total_depth = up_depth + down_depth
-    depth_factor = min(1.5, max(0.3, total_depth / 100.0))
+    depth_factor = min(1.5, max(0.3, total_depth / DEPTH_DIVISOR))
 
     dynamic = base_spread * vol_factor * (1.0 / depth_factor)
-    return max(0.5, min(5.0, dynamic))  # Clamp to [0.5, 5.0] cents
+    return max(SPREAD_CLAMP_MIN, min(SPREAD_CLAMP_MAX, dynamic))
 
 
 def decide(observations: list, history: list, config: dict) -> list:
@@ -87,6 +97,12 @@ def decide(observations: list, history: list, config: dict) -> list:
         down_depth = obs.get("down_depth", 0)
         if up_depth < DEPTH_MIN or down_depth < DEPTH_MIN:
             continue  # Skip illiquid markets
+
+        # ─── Skew and volatility filters ──────────────────────────
+        if abs(implied_up - implied_down) > MAX_IMPLIED_SKEW:
+            continue  # Market too skewed
+        if volatility < MIN_VOLATILITY:
+            continue  # Market too dead
 
         # ─── Dynamic spread calculation ─────────────────────────────
         volatility = obs.get("volatility", 0.03)
@@ -120,7 +136,7 @@ def decide(observations: list, history: list, config: dict) -> list:
 
         # ─── Position sizing proportional to edge ───────────────────
         if EDGE_SCALING:
-            edge_quality = min(3.0, edge / 0.005)  # 0.5c edge -> 1x, 1.5c -> 3x
+            edge_quality = min(MAX_SIZE_MULTIPLIER, edge / EDGE_SCALE_BASE)
             size_usd = ORDER_SIZE_USD * max(0.5, edge_quality)
         else:
             size_usd = ORDER_SIZE_USD
