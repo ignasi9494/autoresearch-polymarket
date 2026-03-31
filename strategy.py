@@ -12,7 +12,7 @@ BID_SPREAD = 0.5  # Legacy alias
 MIN_EDGE_CENTS = 0.2  # Minimum profit per trade after fees (cents)
 ORDER_SIZE_USD = 20.0  # Base USD per side
 MAX_ORDERS_PER_POLL = 5  # Max new order pairs per poll cycle
-MIN_SECS_LEFT = 60  # Min seconds remaining to place order
+MIN_SECS_LEFT = 90  # Min seconds remaining to place order
 COINS_TO_TRADE = None       # None = all coins
 ASYMMETRY = -2.0  # Shift between Up/Down bids (cents)
 
