@@ -73,17 +73,42 @@ PARAM_SPACE = {
         "step": 0.5,
         "description": "Shift in cents between Up and Down bids. Positive = bid more aggressively on Up side. Negative = more aggressive on Down. Zero = symmetric.",
     },
+    "BID_SPREAD_BASE": {
+        "type": "float",
+        "range": [0.5, 6.0],
+        "step": 0.5,
+        "description": "Base spread in cents below implied price (before volatility/depth adjustment). Lower = more aggressive fills. Higher = more edge per fill.",
+    },
+    "DEPTH_MIN": {
+        "type": "float",
+        "range": [0.0, 50.0],
+        "step": 5.0,
+        "description": "Minimum orderbook depth (USD) required on each side to trade. Higher = only trade liquid markets. Zero = trade everything.",
+    },
+    "EDGE_SCALING": {
+        "type": "bool",
+        "range": [0, 1],
+        "step": 1,
+        "description": "If True, position size scales with edge quality (better edge = larger position). If False, fixed ORDER_SIZE_USD.",
+    },
+    "VOL_ADJUSTMENT": {
+        "type": "bool",
+        "range": [0, 1],
+        "step": 1,
+        "description": "If True, BID_SPREAD adjusts dynamically based on volatility and depth. If False, uses fixed BID_SPREAD_BASE.",
+    },
 }
 
 # Legacy random fallback values
 MUTATIONS_FALLBACK = [
     ("MAX_TOTAL_COST", [0.96, 0.97, 0.98, 0.985, 0.99, 0.995]),
-    ("BID_SPREAD", [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]),
+    ("BID_SPREAD_BASE", [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]),
     ("MIN_EDGE_CENTS", [0.2, 0.5, 1.0, 1.5, 2.0]),
     ("ORDER_SIZE_USD", [3, 5, 8, 10, 15, 20]),
     ("MAX_ORDERS_PER_POLL", [1, 2, 3, 5]),
     ("MIN_SECS_LEFT", [10, 20, 30, 60, 90]),
     ("ASYMMETRY", [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0]),
+    ("DEPTH_MIN", [0, 5, 10, 20, 30]),
 ]
 
 
