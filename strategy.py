@@ -11,7 +11,7 @@ BID_SPREAD_BASE = 0.5  # Base spread in cents below implied price
 BID_SPREAD = 1.0  # Legacy alias
 MIN_EDGE_CENTS = 0.4  # Minimum profit per trade after fees (cents)
 ORDER_SIZE_USD = 15.0  # Base USD per side
-MAX_ORDERS_PER_POLL = 2  # Max new order pairs per poll cycle
+MAX_ORDERS_PER_POLL = 5  # Max new order pairs per poll cycle
 MIN_SECS_LEFT = 30  # Min seconds remaining to place order
 COINS_TO_TRADE = None       # None = all coins
 ASYMMETRY = -1.0  # Shift between Up/Down bids (cents)
