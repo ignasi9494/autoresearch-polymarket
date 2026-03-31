@@ -8,7 +8,7 @@ Partial fills are cancelled (no directional risk).
 # ─── PRICING ──────────────────────────────────────────────────────
 MAX_TOTAL_COST = 0.99       # Max combined bid price for Up+Down
 BID_SPREAD_BASE = 2.0  # Base spread in cents below implied price
-ASYMMETRY = -2.0            # Shift between Up/Down bids (cents)
+ASYMMETRY = 0.0  # Shift between Up/Down bids (cents)
 VOL_REFERENCE = 0.03        # Reference volatility for spread calc
 DEPTH_DIVISOR = 100.0       # Divisor to convert depth to factor
 SPREAD_CLAMP_MIN = 0.5      # Min dynamic spread allowed (cents)
@@ -99,13 +99,13 @@ def decide(observations: list, history: list, config: dict) -> list:
             continue  # Skip illiquid markets
 
         # ─── Skew and volatility filters ──────────────────────────
+        volatility = obs.get("volatility", 0.03)
         if abs(implied_up - implied_down) > MAX_IMPLIED_SKEW:
             continue  # Market too skewed
         if volatility < MIN_VOLATILITY:
             continue  # Market too dead
 
         # ─── Dynamic spread calculation ─────────────────────────────
-        volatility = obs.get("volatility", 0.03)
         spread = _dynamic_spread(BID_SPREAD_BASE, volatility, up_depth, down_depth)
 
         spread_up = (spread + ASYMMETRY) / 100.0
