@@ -14,7 +14,7 @@ ORDER_SIZE_USD = 25  # Base USD per side
 MAX_ORDERS_PER_POLL = 5  # Max new order pairs per poll cycle
 MIN_SECS_LEFT = 30  # Min seconds remaining to place order
 COINS_TO_TRADE = None       # None = all coins
-ASYMMETRY = -1.0  # Shift between Up/Down bids (cents)
+ASYMMETRY = -2.0  # Shift between Up/Down bids (cents)
 
 # ─── New v3 Parameters ──────────────────────────────────────────────
 VOL_ADJUSTMENT = True       # Adjust spread by volatility
