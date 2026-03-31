@@ -219,6 +219,44 @@ tr:hover { background:rgba(255,255,255,.02); }
 }
 .footer-sub { margin-top:4px; font-size:.65rem; opacity:.6; }
 
+/* ─── Filter selects ─── */
+.header-actions { display:flex; align-items:center; gap:8px; }
+.filter-select {
+  background:var(--bg2); color:var(--text); border:1px solid var(--border);
+  border-radius:8px; padding:5px 10px; font-size:.72rem; font-family:inherit;
+  cursor:pointer; outline:none;
+}
+.filter-select:hover { border-color:var(--border-light); }
+.filter-select:focus { border-color:var(--cyan); }
+
+/* ─── Pagination ─── */
+.pagination { padding:10px 0 0; }
+.page-controls { display:flex; align-items:center; justify-content:center; gap:6px; }
+.page-controls button {
+  background:var(--bg2); color:var(--text); border:1px solid var(--border);
+  border-radius:6px; padding:5px 10px; font-size:.75rem; cursor:pointer;
+  font-family:inherit; transition:all .15s;
+}
+.page-controls button:hover:not(:disabled) { border-color:var(--cyan); color:var(--cyan); }
+.page-controls button:disabled { opacity:.3; cursor:default; }
+.page-info { font-size:.72rem; color:var(--muted); padding:0 8px; }
+
+/* ─── Row highlights ─── */
+tr.row-kept { background:rgba(34,197,94,.05); }
+tr.row-kept:hover { background:rgba(34,197,94,.1); }
+
+/* ─── Coin card stats ─── */
+.coin-stats {
+  display:flex; justify-content:space-between; font-size:.68rem;
+  margin-top:8px; padding-top:6px; border-top:1px solid var(--border);
+  color:var(--muted);
+}
+.coin-letter {
+  display:inline-flex; width:22px; height:22px; align-items:center; justify-content:center;
+  background:var(--purple-bg); color:var(--purple); border-radius:6px;
+  font-size:.7rem; font-weight:700; font-family:'JetBrains Mono',monospace;
+}
+
 /* ─── Animations ─── */
 @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 .card { animation: fadeIn .3s ease-out; }

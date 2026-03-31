@@ -3,21 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AutoResearch Polymarket v3</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔬</text></svg>">
+<title>AutoResearch Polymarket v4</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1F52C;</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- Header -->
 <header class="header">
   <div class="header-left">
-    <div class="logo">🔬</div>
+    <div class="logo">&#x1F52C;</div>
     <div>
       <h1>AutoResearch <span class="accent">Polymarket</span></h1>
-      <p class="subtitle">Limit Order Arbitrage | Karpathy AutoResearch Loop</p>
+      <p class="subtitle">Limit Order Arbitrage | Karpathy AutoResearch Loop | v4</p>
     </div>
   </div>
   <div class="header-right">
@@ -30,57 +29,49 @@
   </div>
 </header>
 
-<!-- How it works banner -->
 <div class="info-banner" id="info-banner">
   <button class="info-close" onclick="this.parentElement.style.display='none'">&times;</button>
-  <h3>🧠 Como funciona</h3>
+  <h3>Como funciona</h3>
   <div class="info-grid">
-    <div class="info-item">
-      <span class="info-icon">📊</span>
-      <div><strong>1. Observa</strong><br>Cada 30s consulta 5 mercados crypto de 5 min en Polymarket (BTC, ETH, SOL, XRP, DOGE)</div>
-    </div>
-    <div class="info-item">
-      <span class="info-icon">🎯</span>
-      <div><strong>2. Coloca ordenes</strong><br>Pone LIMIT BUY en ambos lados (Up+Down) a precios que sumen &lt;$1.00. Si ambos se llenan = beneficio garantizado</div>
-    </div>
-    <div class="info-item">
-      <span class="info-icon">🤖</span>
-      <div><strong>3. Experimenta (IA)</strong><br>Gemini 2.5 Flash analiza resultados y propone cambios de parametros. Si mejora RAPR, los mantiene</div>
-    </div>
-    <div class="info-item">
-      <span class="info-icon">📈</span>
-      <div><strong>4. Evoluciona</strong><br>Loop autonomo: baseline(1h) → mutacion(LLM) → test(1h) → evaluar → keep/discard. Mejora continua</div>
-    </div>
+    <div class="info-item"><span class="info-icon">1</span><div><strong>Observa</strong><br>Cada 30s consulta 5 mercados crypto de 5 min en Polymarket (BTC, ETH, SOL, XRP, DOGE)</div></div>
+    <div class="info-item"><span class="info-icon">2</span><div><strong>Coloca ordenes</strong><br>Pone LIMIT BUY en ambos lados (Up+Down) a precios que sumen &lt;$1.00. Si ambos se llenan = beneficio garantizado</div></div>
+    <div class="info-item"><span class="info-icon">3</span><div><strong>Experimenta</strong><br>Muta parametros aleatoriamente y compara baseline(1h) vs test(1h) con Welch t-test (p&lt;0.10)</div></div>
+    <div class="info-item"><span class="info-icon">4</span><div><strong>Evoluciona</strong><br>Si el test mejora con significancia estadistica, mantiene el cambio. Si no, revierte. Mejora continua autonoma</div></div>
   </div>
 </div>
 
-<!-- KPIs -->
 <div class="kpi-grid" id="kpi-grid"></div>
 
-<!-- Coin Cards -->
 <h2 class="section-title">Mercados Activos <span class="section-badge">5-min windows</span></h2>
 <div class="coin-cards" id="coin-cards"></div>
 
-<!-- Tabs -->
 <div class="tabs-container">
   <div class="tabs">
-    <button class="tab active" data-tab="experiments">🧪 Experimentos</button>
-    <button class="tab" data-tab="trades">💰 Trades</button>
-    <button class="tab" data-tab="fills">🎯 Fill Analysis</button>
-    <button class="tab" data-tab="performance">📊 Rendimiento</button>
-    <button class="tab" data-tab="strategy">⚙️ Strategy</button>
+    <button class="tab active" data-tab="experiments">Experimentos</button>
+    <button class="tab" data-tab="trades">Trades</button>
+    <button class="tab" data-tab="fills">Fill Analysis</button>
+    <button class="tab" data-tab="performance">Rendimiento</button>
+    <button class="tab" data-tab="strategy">Strategy</button>
   </div>
 </div>
 
-<!-- Experiments Panel -->
 <div class="panel active" id="panel-experiments">
   <div class="grid-2">
     <div class="card">
       <div class="card-header">
         <h3>Historial de Experimentos</h3>
-        <span class="card-badge" id="exp-count">0</span>
+        <div class="header-actions">
+          <select id="exp-filter" class="filter-select">
+            <option value="all">Todos</option>
+            <option value="completed">Kept</option>
+            <option value="reverted">Discarded</option>
+            <option value="crashed">Crashed</option>
+          </select>
+          <span class="card-badge" id="exp-count">0</span>
+        </div>
       </div>
-      <div class="table-scroll" id="exp-table"></div>
+      <div class="table-scroll" id="exp-table" style="max-height:500px;overflow-y:auto"></div>
+      <div class="pagination" id="exp-pagination"></div>
     </div>
     <div class="card">
       <div class="card-header"><h3>RAPR Evolution</h3></div>
@@ -93,24 +84,40 @@
       <div id="active-exp" class="empty-state">Ninguno activo</div>
     </div>
     <div class="card">
-      <div class="card-header"><h3>🧠 LLM Reasoning (Gemini 2.5 Flash)</h3></div>
-      <div id="llm-reasoning" class="code-block">Esperando primera mutacion LLM...</div>
+      <div class="card-header"><h3>Evolucion de Parametros (KEPT)</h3></div>
+      <div id="param-evolution" class="code-block">Cargando...</div>
     </div>
   </div>
 </div>
 
-<!-- Trades Panel -->
 <div class="panel" id="panel-trades">
   <div class="card">
     <div class="card-header">
-      <h3>Trades Recientes</h3>
-      <span class="card-badge" id="trade-count">0</span>
+      <h3>Historial de Trades</h3>
+      <div class="header-actions">
+        <select id="trade-filter-type" class="filter-select">
+          <option value="all">Todos</option>
+          <option value="arb">ARB fills</option>
+          <option value="partial">Partial</option>
+          <option value="miss">Miss</option>
+        </select>
+        <select id="trade-filter-coin" class="filter-select">
+          <option value="all">Todas monedas</option>
+          <option value="BTC">BTC</option>
+          <option value="ETH">ETH</option>
+          <option value="SOL">SOL</option>
+          <option value="XRP">XRP</option>
+          <option value="DOGE">DOGE</option>
+        </select>
+        <span class="card-badge" id="trade-count">0</span>
+      </div>
     </div>
-    <div class="table-scroll" id="trades-table"></div>
+    <div class="table-scroll" id="trades-table" style="max-height:500px;overflow-y:auto"></div>
+    <div class="pagination" id="trades-pagination"></div>
   </div>
   <div class="grid-2">
     <div class="card">
-      <div class="card-header"><h3>PnL por Trade</h3></div>
+      <div class="card-header"><h3>PnL por Trade (ultimos 50)</h3></div>
       <div class="chart-box"><canvas id="ch-pnl"></canvas></div>
     </div>
     <div class="card">
@@ -120,7 +127,6 @@
   </div>
 </div>
 
-<!-- Fill Analysis Panel -->
 <div class="panel" id="panel-fills">
   <div class="grid-3">
     <div class="card">
@@ -137,16 +143,15 @@
     </div>
   </div>
   <div class="card">
-    <div class="card-header"><h3>📖 Que significan los tipos de fill?</h3></div>
+    <div class="card-header"><h3>Tipos de Fill</h3></div>
     <div class="info-grid" style="padding:0">
-      <div class="info-item"><span class="info-icon" style="background:rgba(34,197,94,.15);color:#22c55e">✓✓</span><div><strong>ARB Fill</strong><br>Ambos lados (Up+Down) se llenaron. Beneficio GARANTIZADO independientemente del resultado. Esto es lo que buscamos.</div></div>
-      <div class="info-item"><span class="info-icon" style="background:rgba(234,179,8,.15);color:#eab308">✓✗</span><div><strong>Partial Fill</strong><br>Solo un lado se lleno. Queda como apuesta direccional (50/50). Puede ganar o perder.</div></div>
-      <div class="info-item"><span class="info-icon" style="background:rgba(239,68,68,.15);color:#ef4444">✗✗</span><div><strong>Miss</strong><br>Ninguno se lleno. Sin coste, sin beneficio. La orden expiro sin que nadie vendiera contra nosotros.</div></div>
+      <div class="info-item"><span class="info-icon" style="background:rgba(34,197,94,.15);color:#22c55e">OK</span><div><strong>ARB Fill</strong><br>Ambos lados (Up+Down) se llenaron. Beneficio GARANTIZADO: pagamos &lt;$1.00 por $1.00 de payout</div></div>
+      <div class="info-item"><span class="info-icon" style="background:rgba(234,179,8,.15);color:#eab308">1/2</span><div><strong>Partial Fill</strong><br>Solo un lado se lleno. Se CANCELA el otro lado inmediatamente. Coste: solo gas (~$0.008). Sin riesgo direccional</div></div>
+      <div class="info-item"><span class="info-icon" style="background:rgba(239,68,68,.15);color:#ef4444">--</span><div><strong>Miss</strong><br>Ninguno se lleno. Sin coste. La orden expiro sin que nadie vendiera contra nosotros</div></div>
     </div>
   </div>
 </div>
 
-<!-- Performance Panel -->
 <div class="panel" id="panel-performance">
   <div class="grid-2">
     <div class="card">
@@ -154,17 +159,22 @@
       <div class="chart-box"><canvas id="ch-coin-pnl"></canvas></div>
     </div>
     <div class="card">
+      <div class="card-header"><h3>ARB Fill Rate por Moneda</h3></div>
+      <div class="chart-box"><canvas id="ch-coin-fillrate"></canvas></div>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
       <div class="card-header"><h3>Edge Distribution (centimos)</h3></div>
       <div class="chart-box"><canvas id="ch-edges"></canvas></div>
     </div>
-  </div>
-  <div class="card">
-    <div class="card-header"><h3>Desglose de Costes</h3></div>
-    <div id="cost-breakdown"></div>
+    <div class="card">
+      <div class="card-header"><h3>Desglose de Costes</h3></div>
+      <div id="cost-breakdown"></div>
+    </div>
   </div>
 </div>
 
-<!-- Strategy Panel -->
 <div class="panel" id="panel-strategy">
   <div class="grid-2">
     <div class="card">
@@ -177,20 +187,19 @@
     </div>
   </div>
   <div class="card">
-    <div class="card-header"><h3>📖 Parametros de la Estrategia</h3></div>
+    <div class="card-header"><h3>Parametros de la Estrategia</h3></div>
     <div class="info-grid" style="padding:0">
-      <div class="info-item"><span class="info-icon">💲</span><div><strong>MAX_TOTAL_COST</strong><br>Precio maximo combinado Up+Down. Ej: 0.98 = pagamos max $0.98 por $1.00 garantizado = 2% edge bruto</div></div>
-      <div class="info-item"><span class="info-icon">📏</span><div><strong>BID_SPREAD</strong><br>Centimos por debajo del precio implicito para poner la orden. Ej: 2.0 = si implied=0.50, bid=0.48</div></div>
-      <div class="info-item"><span class="info-icon">🎯</span><div><strong>MIN_EDGE_CENTS</strong><br>Beneficio minimo por trade despues de fees. Solo opera si el edge supera este umbral</div></div>
-      <div class="info-item"><span class="info-icon">📦</span><div><strong>ORDER_SIZE_USD</strong><br>Dolares por lado. Ej: $5 = $5 Up + $5 Down = $10 exposicion total</div></div>
+      <div class="info-item"><span class="info-icon">$</span><div><strong>MAX_TOTAL_COST</strong><br>Precio maximo combinado Up+Down. Ej: 0.985 = pagamos max $0.985 por $1.00 garantizado = 1.5% edge bruto</div></div>
+      <div class="info-item"><span class="info-icon">~</span><div><strong>BID_SPREAD_BASE</strong><br>Centimos base por debajo del precio implicito. Se ajusta dinamicamente por volatilidad y profundidad del orderbook</div></div>
+      <div class="info-item"><span class="info-icon">&gt;</span><div><strong>MIN_EDGE_CENTS</strong><br>Beneficio minimo por trade despues de fees. Solo opera si el edge supera este umbral</div></div>
+      <div class="info-item"><span class="info-icon">#</span><div><strong>ORDER_SIZE_USD</strong><br>Dolares por lado. Ej: $20 = $20 Up + $20 Down = $40 exposicion total. Escalado por calidad del edge</div></div>
     </div>
   </div>
 </div>
 
-<!-- Footer -->
 <footer class="footer">
-  <p>AutoResearch Polymarket v3 · Karpathy AutoResearch · Gemini 2.5 Flash · Paper Trading Mode</p>
-  <p class="footer-sub">Made with 🔬 by Ignasi · Datos actualizados cada 15s via /api/data</p>
+  <p>AutoResearch Polymarket v4 &middot; Karpathy AutoResearch &middot; Random Mutations &middot; Paper Trading</p>
+  <p class="footer-sub">Made by Ignasi &middot; Datos actualizados cada hora via git push</p>
 </footer>
 
 <script src="app.js"></script>

@@ -28,19 +28,19 @@ def get_live_data() -> dict:
         "SELECT * FROM polls ORDER BY id DESC LIMIT 100"
     ).fetchall()]
 
-    # Recent trades (last 100)
+    # ALL trades (full history for dashboard)
     trades = [dict(r) for r in conn.execute(
-        "SELECT * FROM trades ORDER BY id DESC LIMIT 100"
+        "SELECT * FROM trades ORDER BY id DESC"
     ).fetchall()]
 
-    # Portfolio history
+    # Portfolio history (full for equity curve)
     portfolio = [dict(r) for r in conn.execute(
-        "SELECT * FROM portfolio ORDER BY id DESC LIMIT 50"
+        "SELECT * FROM portfolio ORDER BY id DESC"
     ).fetchall()]
 
-    # Experiments
+    # ALL experiments
     experiments = [dict(r) for r in conn.execute(
-        "SELECT * FROM experiments ORDER BY id DESC LIMIT 30"
+        "SELECT * FROM experiments ORDER BY id DESC"
     ).fetchall()]
 
     # Markets
