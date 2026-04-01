@@ -29,7 +29,7 @@ from experiment_manager import (
     ExperimentManager, reload_strategy, revert_strategy,
     save_strategy_version, init_results_tsv, STRATEGY_PATH
 )
-from llm_advisor import propose_mutation_llm, apply_mutation
+from llm_advisor import apply_mutation
 from upload_data import upload_and_push as _upload_to_vercel
 
 # ─── Configuration ──────────────────────────────────────────────────────
