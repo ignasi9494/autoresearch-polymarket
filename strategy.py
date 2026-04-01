@@ -23,7 +23,7 @@ MIN_VOLATILITY = 0.005      # Min volatility to trade (skip dead markets)
 
 # ─── SIZING ───────────────────────────────────────────────────────
 ORDER_SIZE_USD = 15  # Base USD per side [KEPT #178 by Gemini]
-EDGE_SCALE_BASE = 0.005     # Edge divisor for position scaling
+EDGE_SCALE_BASE = 0.003  # Edge divisor for position scaling
 MAX_SIZE_MULTIPLIER = 3.0   # Cap for edge scaling multiplier
 MAX_EXPOSURE_PCT = 0.5      # Max % of balance as total exposure
 
