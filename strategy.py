@@ -6,12 +6,12 @@ Partial fills are cancelled (no directional risk).
 """
 
 # ─── PRICING ──────────────────────────────────────────────────────
-MAX_TOTAL_COST = 0.975  # Max combined bid price for Up+Down
-BID_SPREAD_BASE = 2.0  # Base spread in cents below implied price
-ASYMMETRY = 0.0  # Shift between Up/Down bids (cents)
-VOL_REFERENCE = 0.03  # Reference volatility for spread calc
+MAX_TOTAL_COST = 0.99       # Max combined bid price for Up+Down
+BID_SPREAD_BASE = 0.5       # Base spread in cents below implied price
+ASYMMETRY = 0.0             # Shift between Up/Down bids (cents) [KEPT #177 by Gemini]
+VOL_REFERENCE = 0.03        # Reference volatility for spread calc
 DEPTH_DIVISOR = 100.0       # Divisor to convert depth to factor
-SPREAD_CLAMP_MIN = 0.8  # Min dynamic spread allowed (cents)
+SPREAD_CLAMP_MIN = 0.5      # Min dynamic spread allowed (cents)
 SPREAD_CLAMP_MAX = 5.0      # Max dynamic spread allowed (cents)
 
 # ─── FILTROS ──────────────────────────────────────────────────────
@@ -22,9 +22,9 @@ MAX_IMPLIED_SKEW = 0.30     # Max |Up - Down| implied price diff
 MIN_VOLATILITY = 0.005      # Min volatility to trade (skip dead markets)
 
 # ─── SIZING ───────────────────────────────────────────────────────
-ORDER_SIZE_USD = 10  # Base USD per side
+ORDER_SIZE_USD = 10.0       # Base USD per side [KEPT #178 by Gemini]
 EDGE_SCALE_BASE = 0.005     # Edge divisor for position scaling
-MAX_SIZE_MULTIPLIER = 2.0  # Cap for edge scaling multiplier
+MAX_SIZE_MULTIPLIER = 3.0   # Cap for edge scaling multiplier
 MAX_EXPOSURE_PCT = 0.5      # Max % of balance as total exposure
 
 # ─── TIMING ───────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ POLL_DELAY_SECS = 0         # Extra delay (secs) before each decision
 
 # ─── SYSTEM ───────────────────────────────────────────────────────
 MAX_ORDERS_PER_POLL = 5     # Max order pairs per poll cycle
-VOL_ADJUSTMENT = 1  # Enable dynamic spread by volatility
+VOL_ADJUSTMENT = True       # Enable dynamic spread by volatility
 EDGE_SCALING = True         # Scale position size by edge quality
 COINS_TO_TRADE = None       # None = all coins
 USE_LLM = True              # True = Gemini agentic, False = random
@@ -99,13 +99,13 @@ def decide(observations: list, history: list, config: dict) -> list:
             continue  # Skip illiquid markets
 
         # ─── Skew and volatility filters ──────────────────────────
-        volatility = obs.get("volatility", 0.03)
         if abs(implied_up - implied_down) > MAX_IMPLIED_SKEW:
             continue  # Market too skewed
         if volatility < MIN_VOLATILITY:
             continue  # Market too dead
 
         # ─── Dynamic spread calculation ─────────────────────────────
+        volatility = obs.get("volatility", 0.03)
         spread = _dynamic_spread(BID_SPREAD_BASE, volatility, up_depth, down_depth)
 
         spread_up = (spread + ASYMMETRY) / 100.0

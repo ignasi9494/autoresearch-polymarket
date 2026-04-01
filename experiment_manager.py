@@ -86,11 +86,11 @@ def reload_strategy():
 
 
 def git_commit(message: str):
-    """Create a git commit with the current strategy.py."""
+    """Create a git commit with strategy.py and strategy_default.py."""
     try:
         project_dir = os.path.dirname(__file__)
-        subprocess.run(["git", "add", "strategy.py"], cwd=project_dir,
-                        capture_output=True, timeout=10)
+        subprocess.run(["git", "add", "strategy.py", "strategy_default.py"],
+                        cwd=project_dir, capture_output=True, timeout=10)
         subprocess.run(["git", "commit", "-m", message], cwd=project_dir,
                         capture_output=True, timeout=10)
         log(f"Git commit: {message[:60]}")
@@ -247,6 +247,8 @@ class ExperimentManager:
             log(f"Experiment #{experiment['id']}: KEEP - strategy advanced")
             # Update the default to current (so future experiments baseline from here)
             shutil.copy2(STRATEGY_PATH, STRATEGY_DEFAULT_PATH)
+            # CRITICAL: commit default so git reset --hard doesn't lose KEPT changes
+            git_commit(f"kept-{experiment['id']}: update strategy_default.py")
         else:
             log(f"Experiment #{experiment['id']}: DISCARD - reverting")
             revert_strategy()
