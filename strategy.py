@@ -11,7 +11,7 @@ BID_SPREAD_BASE = 2.0  # Base spread in cents below implied price
 ASYMMETRY = 0.0  # Shift between Up/Down bids (cents)
 VOL_REFERENCE = 0.03        # Reference volatility for spread calc
 DEPTH_DIVISOR = 100.0       # Divisor to convert depth to factor
-SPREAD_CLAMP_MIN = 0.5      # Min dynamic spread allowed (cents)
+SPREAD_CLAMP_MIN = 0.8  # Min dynamic spread allowed (cents)
 SPREAD_CLAMP_MAX = 5.0      # Max dynamic spread allowed (cents)
 
 # ─── FILTROS ──────────────────────────────────────────────────────
