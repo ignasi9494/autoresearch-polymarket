@@ -7,7 +7,7 @@ Partial fills are cancelled (no directional risk).
 
 # ─── PRICING ──────────────────────────────────────────────────────
 MAX_TOTAL_COST = 0.99       # Max combined bid price for Up+Down
-BID_SPREAD_BASE = 0.5       # Base spread in cents below implied price
+BID_SPREAD_BASE = 1.5  # Base spread in cents below implied price
 ASYMMETRY = 0.0             # Shift between Up/Down bids (cents) [KEPT #177 by Gemini]
 VOL_REFERENCE = 0.03        # Reference volatility for spread calc
 DEPTH_DIVISOR = 100.0       # Divisor to convert depth to factor
