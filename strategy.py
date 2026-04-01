@@ -33,7 +33,7 @@ POLL_DELAY_SECS = 0         # Extra delay (secs) before each decision
 
 # ─── SYSTEM ───────────────────────────────────────────────────────
 MAX_ORDERS_PER_POLL = 5     # Max order pairs per poll cycle
-VOL_ADJUSTMENT = True       # Enable dynamic spread by volatility
+VOL_ADJUSTMENT = 0  # Enable dynamic spread by volatility
 EDGE_SCALING = True         # Scale position size by edge quality
 COINS_TO_TRADE = None       # None = all coins
 USE_LLM = True              # True = Gemini agentic, False = random
