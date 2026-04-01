@@ -24,7 +24,7 @@ MIN_VOLATILITY = 0.005      # Min volatility to trade (skip dead markets)
 # ─── SIZING ───────────────────────────────────────────────────────
 ORDER_SIZE_USD = 10  # Base USD per side
 EDGE_SCALE_BASE = 0.005     # Edge divisor for position scaling
-MAX_SIZE_MULTIPLIER = 4.0  # Cap for edge scaling multiplier
+MAX_SIZE_MULTIPLIER = 2.0  # Cap for edge scaling multiplier
 MAX_EXPOSURE_PCT = 0.5      # Max % of balance as total exposure
 
 # ─── TIMING ───────────────────────────────────────────────────────
