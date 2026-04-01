@@ -6,7 +6,7 @@ Partial fills are cancelled (no directional risk).
 """
 
 # ─── PRICING ──────────────────────────────────────────────────────
-MAX_TOTAL_COST = 0.99       # Max combined bid price for Up+Down
+MAX_TOTAL_COST = 0.975  # Max combined bid price for Up+Down
 BID_SPREAD_BASE = 2.0  # Base spread in cents below implied price
 ASYMMETRY = 0.0  # Shift between Up/Down bids (cents)
 VOL_REFERENCE = 0.03  # Reference volatility for spread calc
