@@ -7,7 +7,7 @@ Partial fills are cancelled (no directional risk).
 
 # ─── PRICING ──────────────────────────────────────────────────────
 MAX_TOTAL_COST = 0.99       # Max combined bid price for Up+Down
-BID_SPREAD_BASE = 0.5       # Base spread in cents below implied price
+BID_SPREAD_BASE = 1.5  # Base spread in cents below implied price
 ASYMMETRY = 0.0             # Shift between Up/Down bids (cents) [KEPT #177 by Gemini]
 VOL_REFERENCE = 0.03        # Reference volatility for spread calc
 DEPTH_DIVISOR = 100.0       # Divisor to convert depth to factor
@@ -22,7 +22,7 @@ MAX_IMPLIED_SKEW = 0.30     # Max |Up - Down| implied price diff
 MIN_VOLATILITY = 0.005      # Min volatility to trade (skip dead markets)
 
 # ─── SIZING ───────────────────────────────────────────────────────
-ORDER_SIZE_USD = 10.0       # Base USD per side [KEPT #178 by Gemini]
+ORDER_SIZE_USD = 15  # Base USD per side [KEPT #178 by Gemini]
 EDGE_SCALE_BASE = 0.005     # Edge divisor for position scaling
 MAX_SIZE_MULTIPLIER = 3.0   # Cap for edge scaling multiplier
 MAX_EXPOSURE_PCT = 0.5      # Max % of balance as total exposure
