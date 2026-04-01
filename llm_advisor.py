@@ -191,54 +191,38 @@ def _fmt_portfolio(port):
 
 
 def _extract_json(text):
-    """Extract JSON from LLM response (handles multiline, markdown, etc)."""
-    # Try markdown code block (multiline)
-    match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    # Find first { and match to corresponding }
-    start = text.find('{')
+    """Extract JSON from LLM response (handles multiline, markdown, truncated)."""
+    # Strip markdown code blocks first
+    clean = re.sub(r'```(?:json)?\s*', '', text)
+    clean = clean.replace('```', '').strip()
+
+    # Try parsing the cleaned text directly
+    start = clean.find('{')
     if start != -1:
         depth = 0
-        for i in range(start, len(text)):
-            if text[i] == '{': depth += 1
-            elif text[i] == '}':
+        for i in range(start, len(clean)):
+            if clean[i] == '{': depth += 1
+            elif clean[i] == '}':
                 depth -= 1
                 if depth == 0:
                     try:
-                        return json.loads(text[start:i+1])
+                        return json.loads(clean[start:i+1])
                     except json.JSONDecodeError:
                         pass
                     break
-    # Last resort: try to find any JSON-like structure
-    for m in re.finditer(r'\{[^{}]*\}', text):
-        try:
-            return json.loads(m.group(0))
-        except json.JSONDecodeError:
-            continue
-    # Handle truncated JSON: if starts with { but no closing }, try to fix
+    # Handle truncated JSON: cut from end until valid
     if start is not None and start != -1:
-        partial = text[start:]
-        # Truncate at last complete key-value and close
-        partial = partial.rstrip()
-        if not partial.endswith('}'):
-            # Find last complete quoted value
-            last_quote = partial.rfind('"')
-            if last_quote > 0:
-                partial = partial[:last_quote+1] + '}'
-                try:
-                    return json.loads(partial)
-                except json.JSONDecodeError:
-                    pass
-            # Try simpler: just close it
-            partial = text[start:].rstrip().rstrip(',') + '}'
-            try:
-                return json.loads(partial)
-            except json.JSONDecodeError:
-                pass
+        partial = clean[start:]
+        for cut in range(len(partial), max(0, len(partial)-300), -1):
+            chunk = partial[:cut].rstrip().rstrip(',').rstrip(':')
+            opens = chunk.count('{')
+            closes = chunk.count('}')
+            if opens > closes:
+                for suffix in ['"}'*(opens-closes), '}'*(opens-closes)]:
+                    try:
+                        return json.loads(chunk + suffix)
+                    except json.JSONDecodeError:
+                        continue
     raise ValueError(f"No JSON found in: {text[:200]}")
 
 
@@ -325,8 +309,21 @@ JSON: {{"plan": "brief plan", "steps_needed": N, "initial_thoughts": "brief"}}""
     steps_needed = min(5, max(1, int(step1.get("steps_needed", 3))))
     log(f"Step 1 done. Plans {steps_needed} steps. Thoughts: {str(step1.get('initial_thoughts',''))[:100]}")
 
-    # STEPS 2..N
+    # If LLM said 1 step, it already knows what to do — ask for decision directly
     final_result = None
+    if steps_needed == 1:
+        msg_direct = (f"You said 1 step is enough. Give your decision NOW. Single line JSON. "
+                      f"Current: {json.dumps({k:v for k,v in current_params.items()}, default=str)}\n"
+                      f"Example: {{\"param\": \"ORDER_SIZE_USD\", \"value\": 15, \"reasoning\": \"brief why\", \"confidence\": \"high\"}}")
+        log("Step 1 was enough, asking for direct decision...")
+        r_direct = chat.send_message(msg_direct)
+        try:
+            final_result = _extract_json(r_direct.text)
+            log(f"Direct decision: {json.dumps(final_result, default=str)[:120]}")
+        except Exception:
+            pass
+
+    # STEPS 2..N (only if steps_needed > 1)
     for step in range(2, steps_needed + 1):
         if step < steps_needed:
             msg = (f"Step {step}/{steps_needed}. Continue your analysis. "
