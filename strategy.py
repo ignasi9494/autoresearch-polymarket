@@ -98,14 +98,14 @@ def decide(observations: list, history: list, config: dict) -> list:
         if up_depth < DEPTH_MIN or down_depth < DEPTH_MIN:
             continue  # Skip illiquid markets
 
-        # ─── Skew and volatility filters ──────────────────────────
+        # ─── Volatility + skew filters ─────────────────────────────
+        volatility = obs.get("volatility", 0.03)
         if abs(implied_up - implied_down) > MAX_IMPLIED_SKEW:
             continue  # Market too skewed
         if volatility < MIN_VOLATILITY:
             continue  # Market too dead
 
         # ─── Dynamic spread calculation ─────────────────────────────
-        volatility = obs.get("volatility", 0.03)
         spread = _dynamic_spread(BID_SPREAD_BASE, volatility, up_depth, down_depth)
 
         spread_up = (spread + ASYMMETRY) / 100.0
