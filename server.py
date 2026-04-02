@@ -20,9 +20,11 @@ RESULTS_FILE = os.path.join(os.path.dirname(__file__), "results.tsv")
 
 
 def get_onchain_balance() -> dict:
-    """Fetch real on-chain USDC.e and POL balances."""
+    """Fetch real on-chain USDC.e, POL, and Polymarket token values.
+    This is the SOURCE OF TRUTH for the dashboard."""
     try:
         from web3 import Web3
+        import requests as req
         env_path = os.path.join(os.path.dirname(__file__), ".env")
         wallet = ""
         if os.path.exists(env_path):
@@ -32,19 +34,51 @@ def get_onchain_balance() -> dict:
                         wallet = line.strip().split("=", 1)[1]
         if not wallet:
             return {}
+
         w3 = Web3(Web3.HTTPProvider("https://polygon-pokt.nodies.app",
-                                     request_kwargs={"timeout": 5}))
+                                     request_kwargs={"timeout": 8}))
         if not w3.is_connected():
             return {}
-        wallet = Web3.to_checksum_address(wallet)
+
+        wallet_cs = Web3.to_checksum_address(wallet)
         USDC_E = Web3.to_checksum_address("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
         ABI = [{"constant": True, "inputs": [{"name": "account", "type": "address"}],
                 "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}],
                 "type": "function"}]
         usdc = w3.eth.contract(address=USDC_E, abi=ABI)
+        usdc_bal = usdc.functions.balanceOf(wallet_cs).call() / 10**6
+        pol_bal = float(w3.from_wei(w3.eth.get_balance(wallet_cs), "ether"))
+
+        # Get value of tokens in Polymarket
+        tokens_value = 0
+        try:
+            r = req.get("https://data-api.polymarket.com/positions",
+                       params={"user": wallet}, timeout=8)
+            positions = r.json()
+            CTF = Web3.to_checksum_address("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045")
+            CTF_ABI = [{"constant": True,
+                        "inputs": [{"name": "account", "type": "address"},
+                                   {"name": "id", "type": "uint256"}],
+                        "name": "balanceOf",
+                        "outputs": [{"name": "", "type": "uint256"}],
+                        "type": "function"}]
+            ctf = w3.eth.contract(address=CTF, abi=CTF_ABI)
+            for p in positions:
+                asset = p.get("asset", "")
+                price = float(p.get("curPrice", 0) or 0)
+                try:
+                    bal = ctf.functions.balanceOf(wallet_cs, int(asset)).call() / 10**6
+                    if bal > 0:
+                        tokens_value += bal * price
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         return {
-            "usdc_e": usdc.functions.balanceOf(wallet).call() / 10**6,
-            "pol": float(w3.from_wei(w3.eth.get_balance(wallet), "ether")),
+            "usdc_e": usdc_bal,
+            "pol": pol_bal,
+            "tokens_value": tokens_value,
         }
     except Exception:
         return {}
@@ -85,13 +119,22 @@ def get_live_data() -> dict:
     except Exception:
         pass
 
-    # Calculate portfolio from real trades (NOT from portfolio table which can be stale)
+    # On-chain balance = SOURCE OF TRUTH
+    onchain = get_onchain_balance()
+    onchain_total = onchain.get("usdc_e", 0) + onchain.get("tokens_value", 0)
+
+    # Trade stats from real_trades
     arbs = [t for t in real_trades if t.get("status") == "arb_complete"]
     partials = [t for t in real_trades if t.get("status") == "partial"]
-    total_pnl = sum(t.get("net_pnl", 0) or 0 for t in real_trades)
     total_fees = sum(t.get("fees", 0) or 0 for t in real_trades)
+
+    # PnL = on-chain total - starting balance (the REAL number)
+    total_pnl = onchain_total - STARTING_BALANCE if onchain_total > 0 else sum(t.get("net_pnl", 0) or 0 for t in real_trades)
+
     portfolio = {
-        "balance_usd": STARTING_BALANCE + total_pnl,
+        "balance_usd": onchain_total if onchain_total > 0 else STARTING_BALANCE,
+        "balance_wallet": onchain.get("usdc_e", 0),
+        "balance_tokens": onchain.get("tokens_value", 0),
         "total_pnl": total_pnl,
         "total_trades": len(arbs) + len(partials),
         "total_fees": total_fees,
@@ -115,9 +158,6 @@ def get_live_data() -> dict:
     ).fetchall()]
 
     conn.close()
-
-    # On-chain balance (best-effort)
-    onchain = get_onchain_balance()
 
     # Env config
     config = get_env_config()

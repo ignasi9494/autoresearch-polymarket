@@ -169,34 +169,34 @@ function render(D){
   if(D.trading_mode==='real' && !D.dry_run){badge.textContent='LIVE';badge.className='badge badge-live'}
   else{badge.textContent='DRY RUN';badge.className='badge badge-dry'}
 
-  // Stats from real_trades only
+  // Stats from real_trades
   const arbs = rt.filter(t=>t.status==='arb_complete');
   const partials = rt.filter(t=>t.status==='partial');
-  const misses = rt.filter(t=>t.status==='miss');
-  const totalPnl = rt.reduce((s,t)=>s+(t.net_pnl||0),0);
-  const arbPnl = arbs.reduce((s,t)=>s+(t.net_pnl||0),0);
-  const partialCost = partials.reduce((s,t)=>s+(t.net_pnl||0),0);
-  const bal = STARTING + totalPnl;
-  const roi = (totalPnl / STARTING * 100);
   const fillRate = rt.length > 0 ? (arbs.length/rt.length*100) : 0;
-  const avgArb = arbs.length > 0 ? arbPnl/arbs.length : 0;
+  const avgArb = arbs.length > 0 ? arbs.reduce((s,t)=>s+(t.net_pnl||0),0)/arbs.length : 0;
+
+  // BALANCE = from MetaMask (on-chain) = SOURCE OF TRUTH
+  const walletBal = port.balance_wallet || onchain.usdc_e || 0;
+  const tokensBal = port.balance_tokens || onchain.tokens_value || 0;
+  const totalBal = port.balance_usd || (walletBal + tokensBal);
+  const totalPnl = port.total_pnl || (totalBal - STARTING);
+  const roi = (totalPnl / STARTING * 100);
 
   // KPIs
   document.getElementById('kpi-row').innerHTML = [
-    {l:'Balance (calculado)',v:fmtUsd2(bal),c:totalPnl>=0?'pos':'neg',s:`Inicio: $${STARTING}`},
-    {l:'PnL Neto Verificado',v:(totalPnl>=0?'+':'')+fmtUsd2(totalPnl),c:totalPnl>=0?'pos':'neg',s:`ARBs: +${fmtUsd2(arbPnl)} | Partials: ${fmtUsd2(partialCost)}`},
+    {l:'Balance Total (MetaMask)',v:fmtUsd2(totalBal),c:totalPnl>=0?'pos':'neg',s:`Wallet: ${fmtUsd2(walletBal)} + Tokens: ${fmtUsd2(tokensBal)}`},
+    {l:'PnL (on-chain)',v:(totalPnl>=0?'+':'')+fmtUsd2(totalPnl),c:totalPnl>=0?'pos':'neg',s:`Inicio: $${STARTING}`},
     {l:'ROI',v:(roi>=0?'+':'')+roi.toFixed(2)+'%',c:roi>=0?'pos':'neg',s:`sobre $${STARTING}`},
     {l:'Arb Fill Rate',v:pct(fillRate),c:fillRate>=15?'pos':'neg',s:`${arbs.length} arbs de ${rt.length} trades`},
     {l:'Avg Profit/Arb',v:fmtUsd(avgArb),c:'pos',s:`${arbs.length} arbs exitosos`},
-    {l:'On-Chain USDC.e',v:fmtUsd2(onchain.usdc_e||0),c:'',s:`Wallet real (${fmtUsd2(bal-(onchain.usdc_e||0))} en posiciones)`},
+    {l:'Wallet USDC.e',v:fmtUsd2(walletBal),c:'',s:`POL: ${fmt(onchain.pol||0,1)}`},
   ].map(k=>`<div class="kpi"><div class="label">${k.l}</div><div class="value ${k.c||''}">${k.v}</div><div class="sub">${k.s||''}</div></div>`).join('');
 
-  // On-chain warning
-  const locked = bal - (onchain.usdc_e||0);
+  // Token info
   const warn = document.getElementById('onchain-warn');
-  if(locked > 5){
+  if(tokensBal > 1){
     warn.style.display='block';
-    warn.innerHTML = `<strong>$${locked.toFixed(2)} bloqueados en posiciones de Polymarket.</strong> Este dinero vuelve cuando las ventanas de 5 min resuelven. No es una perdida.`;
+    warn.innerHTML = `<strong>${fmtUsd2(tokensBal)} en tokens de Polymarket.</strong> Se auto-redimen cada ciclo. Incluidos en el balance total.`;
   } else { warn.style.display='none'; }
 
   // Per coin
