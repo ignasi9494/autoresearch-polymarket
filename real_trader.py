@@ -48,7 +48,7 @@ REAL_MAX_SIZE_PER_SIDE = 3.0  # Max USD per side, HARDCODED safety cap
 MIN_SIZE_USD = 0.50  # Don't bother with orders smaller than this
 MIN_SHARES = 5  # Polymarket minimum order size
 FILL_POLL_INTERVAL = 2.0  # Seconds between fill checks
-FILL_TIMEOUT_BUFFER = 16  # Stop checking fills this many secs before window end
+FILL_TIMEOUT_BUFFER = 20  # Stop checking fills this many secs before window end
 GAS_COST_ESTIMATE = 0.005  # Estimated gas per order on Polygon
 
 # ─── Configurable via .env ───────────────────────────────────────────
@@ -482,7 +482,7 @@ class RealTrader:
                 log(f"  [WARN] Fill check error: {e}")
 
         # Handle partial fills: CANCEL unfilled + smart SELL/HOLD
-        HOLD_THRESHOLD = 0.05  # Hold if current price > buy price + this
+        HOLD_MIN_PRICE = 0.70  # Only hold if token price > 70% (high chance of winning)
         if filled_up and not filled_down:
             try:
                 self.client.cancel(order_id_down)
@@ -491,12 +491,12 @@ class RealTrader:
                 log(f"  [WARN] Cancel down failed: {e}")
             # Smart decision: check current price before selling
             cur_price = self._get_current_bid(token_up)
-            if cur_price > bid_up + HOLD_THRESHOLD:
-                log(f"  [HOLD] Up token @ ${cur_price:.2f} > buy ${bid_up:.2f} + ${HOLD_THRESHOLD} -> keeping (likely winner)")
+            if cur_price >= HOLD_MIN_PRICE:
+                log(f"  [HOLD] Up token @ ${cur_price:.2f} >= ${HOLD_MIN_PRICE} (70%+ win chance) -> keeping")
                 sell_result = {"success": False, "sell_price": 0, "amount_received": 0,
                                "error": "HOLD: price favorable", "held": True, "cur_price": cur_price}
             else:
-                log(f"  [SELL] Up token @ ${cur_price:.2f} <= buy ${bid_up:.2f} + ${HOLD_THRESHOLD} -> selling")
+                log(f"  [SELL] Up token @ ${cur_price:.2f} < ${HOLD_MIN_PRICE} -> selling to limit loss")
                 sell_result = self._emergency_sell_position(token_up, shares_up, coin, "Up")
 
         elif filled_down and not filled_up:
@@ -506,12 +506,12 @@ class RealTrader:
             except Exception as e:
                 log(f"  [WARN] Cancel up failed: {e}")
             cur_price = self._get_current_bid(token_down)
-            if cur_price > bid_down + HOLD_THRESHOLD:
-                log(f"  [HOLD] Down token @ ${cur_price:.2f} > buy ${bid_down:.2f} + ${HOLD_THRESHOLD} -> keeping (likely winner)")
+            if cur_price >= HOLD_MIN_PRICE:
+                log(f"  [HOLD] Down token @ ${cur_price:.2f} >= ${HOLD_MIN_PRICE} (70%+ win chance) -> keeping")
                 sell_result = {"success": False, "sell_price": 0, "amount_received": 0,
                                "error": "HOLD: price favorable", "held": True, "cur_price": cur_price}
             else:
-                log(f"  [SELL] Down token @ ${cur_price:.2f} <= buy ${bid_down:.2f} + ${HOLD_THRESHOLD} -> selling")
+                log(f"  [SELL] Down token @ ${cur_price:.2f} < ${HOLD_MIN_PRICE} -> selling to limit loss")
                 sell_result = self._emergency_sell_position(token_down, shares_down, coin, "Down")
 
         elif not filled_up and not filled_down:
