@@ -235,6 +235,7 @@ class RealTrader:
         order_id_down = None
         filled_up = False
         filled_down = False
+        sell_result = None
         error_msg = None
 
         try:
@@ -260,13 +261,19 @@ class RealTrader:
                 )
                 filled_up = random.random() < prob_up
                 filled_down = random.random() < prob_down
+                # Simulate sell for partials in dry run
+                if (filled_up and not filled_down) or (filled_down and not filled_up):
+                    bp = bid_up if filled_up else bid_down
+                    sh = shares_up if filled_up else shares_down
+                    sell_result = {"success": True, "sell_price": bp - 0.02,
+                                   "amount_received": sh * (bp - 0.02), "error": None}
             else:
                 # REAL: place orders via CLOB
                 attempts_left = 2
                 last_exc = None
                 while attempts_left > 0:
                     try:
-                        order_id_up, order_id_down, filled_up, filled_down = (
+                        order_id_up, order_id_down, filled_up, filled_down, sell_result = (
                             self._place_and_monitor(
                                 coin,
                                 token_up,
@@ -311,15 +318,20 @@ class RealTrader:
         # ─── Calculate PnL ───────────────────────────────────────────
         both_filled = filled_up and filled_down
         filled = filled_up or filled_down
+        sell_ok = sell_result and sell_result.get("success", False)
 
         if both_filled:
             net_pnl = (
                 1.0 - total_cost
             ) / total_cost * size_usd * 2 - total_fees * size_usd / total_cost
-        elif filled_up and not filled_down:
-            net_pnl = -GAS_COST_ESTIMATE  # Cancel other side, only gas lost
-        elif filled_down and not filled_up:
-            net_pnl = -GAS_COST_ESTIMATE
+        elif filled and sell_ok:
+            # Partial + sold: real spread loss
+            buy_cost = shares_up * bid_up if filled_up else shares_down * bid_down
+            sell_received = sell_result.get("amount_received", 0)
+            net_pnl = sell_received - buy_cost - GAS_COST_ESTIMATE * 2
+        elif filled and not sell_ok:
+            # Partial + sell failed: token stuck, assume worst case
+            net_pnl = -(shares_up * bid_up if filled_up else shares_down * bid_down)
         else:
             net_pnl = 0.0
 
@@ -432,9 +444,11 @@ class RealTrader:
         filled_up = resp_up.get("status") == "matched"
         filled_down = resp_down.get("status") == "matched"
 
+        sell_result = None
+
         if filled_up and filled_down:
             log(f"  [INSTANT ARB] Both filled immediately!")
-            return order_id_up, order_id_down, True, True
+            return order_id_up, order_id_down, True, True, None
 
         # Monitor for fills until timeout
         deadline = time.time() + max(0, secs_left - FILL_TIMEOUT_BUFFER)
@@ -459,22 +473,32 @@ class RealTrader:
             except Exception as e:
                 log(f"  [WARN] Fill check error: {e}")
 
-        # Cancel unfilled orders (partial fills keep the filled token)
-        if not filled_up and order_id_up:
-            try:
-                self.client.cancel(order_id_up)
-                log(f"  [CANCEL] Up order cancelled")
-            except Exception as e:
-                log(f"  [WARN] Cancel up failed: {e}")
-
-        if not filled_down and order_id_down:
+        # Handle partial fills: CANCEL unfilled + SELL filled immediately
+        if filled_up and not filled_down:
             try:
                 self.client.cancel(order_id_down)
                 log(f"  [CANCEL] Down order cancelled")
             except Exception as e:
                 log(f"  [WARN] Cancel down failed: {e}")
+            sell_result = self._emergency_sell_position(token_up, shares_up, coin, "Up")
 
-        return order_id_up, order_id_down, filled_up, filled_down
+        elif filled_down and not filled_up:
+            try:
+                self.client.cancel(order_id_up)
+                log(f"  [CANCEL] Up order cancelled")
+            except Exception as e:
+                log(f"  [WARN] Cancel up failed: {e}")
+            sell_result = self._emergency_sell_position(token_down, shares_down, coin, "Down")
+
+        elif not filled_up and not filled_down:
+            for oid in [order_id_up, order_id_down]:
+                if oid:
+                    try:
+                        self.client.cancel(oid)
+                    except Exception:
+                        pass
+
+        return order_id_up, order_id_down, filled_up, filled_down, sell_result
 
     def _refresh_market_tokens(self, coin: str):
         """Refresh token IDs from current slot market for a coin."""

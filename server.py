@@ -18,13 +18,24 @@ DATA_FILE = os.path.join(os.path.dirname(__file__), "data", "dashboard_data.json
 STRATEGY_FILE = os.path.join(os.path.dirname(__file__), "strategy.py")
 RESULTS_FILE = os.path.join(os.path.dirname(__file__), "results.tsv")
 
+_ONCHAIN_CACHE = {}
+_ONCHAIN_CACHE_TS = 0.0
+_ONCHAIN_CACHE_TTL = 120.0  # Cache 2 min (40+ RPC calls is slow)
+
 
 def get_onchain_balance() -> dict:
     """Fetch real on-chain USDC.e, POL, and Polymarket token values.
     This is the SOURCE OF TRUTH for the dashboard."""
+    global _ONCHAIN_CACHE, _ONCHAIN_CACHE_TS
+
+    now_ts = datetime.now().timestamp()
+    if _ONCHAIN_CACHE and (now_ts - _ONCHAIN_CACHE_TS) < _ONCHAIN_CACHE_TTL:
+        return _ONCHAIN_CACHE
+
     try:
         from web3 import Web3
         import requests as req
+
         env_path = os.path.join(os.path.dirname(__file__), ".env")
         wallet = ""
         if os.path.exists(env_path):
@@ -35,53 +46,56 @@ def get_onchain_balance() -> dict:
         if not wallet:
             return {}
 
-        w3 = Web3(Web3.HTTPProvider("https://polygon-pokt.nodies.app",
-                                     request_kwargs={"timeout": 8}))
+        w3 = Web3(
+            Web3.HTTPProvider(
+                "https://polygon-pokt.nodies.app", request_kwargs={"timeout": 8}
+            )
+        )
         if not w3.is_connected():
             return {}
 
         wallet_cs = Web3.to_checksum_address(wallet)
         USDC_E = Web3.to_checksum_address("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
-        ABI = [{"constant": True, "inputs": [{"name": "account", "type": "address"}],
-                "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}],
-                "type": "function"}]
+        ABI = [
+            {
+                "constant": True,
+                "inputs": [{"name": "account", "type": "address"}],
+                "name": "balanceOf",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "type": "function",
+            }
+        ]
         usdc = w3.eth.contract(address=USDC_E, abi=ABI)
         usdc_bal = usdc.functions.balanceOf(wallet_cs).call() / 10**6
         pol_bal = float(w3.from_wei(w3.eth.get_balance(wallet_cs), "ether"))
 
-        # Get value of tokens in Polymarket
+        # Get value of tokens in Polymarket (use API sizes, not on-chain - much faster)
         tokens_value = 0
         try:
-            r = req.get("https://data-api.polymarket.com/positions",
-                       params={"user": wallet}, timeout=8)
+            r = req.get(
+                "https://data-api.polymarket.com/positions",
+                params={"user": wallet},
+                timeout=8,
+            )
             positions = r.json()
-            CTF = Web3.to_checksum_address("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045")
-            CTF_ABI = [{"constant": True,
-                        "inputs": [{"name": "account", "type": "address"},
-                                   {"name": "id", "type": "uint256"}],
-                        "name": "balanceOf",
-                        "outputs": [{"name": "", "type": "uint256"}],
-                        "type": "function"}]
-            ctf = w3.eth.contract(address=CTF, abi=CTF_ABI)
             for p in positions:
-                asset = p.get("asset", "")
+                size = float(p.get("size", 0) or 0)
                 price = float(p.get("curPrice", 0) or 0)
-                try:
-                    bal = ctf.functions.balanceOf(wallet_cs, int(asset)).call() / 10**6
-                    if bal > 0:
-                        tokens_value += bal * price
-                except Exception:
-                    pass
+                if size > 0 and price > 0:
+                    tokens_value += size * price
         except Exception:
             pass
 
-        return {
+        data = {
             "usdc_e": usdc_bal,
             "pol": pol_bal,
             "tokens_value": tokens_value,
         }
+        _ONCHAIN_CACHE = data
+        _ONCHAIN_CACHE_TS = now_ts
+        return data
     except Exception:
-        return {}
+        return _ONCHAIN_CACHE if _ONCHAIN_CACHE else {}
 
 
 def get_env_config() -> dict:
@@ -110,12 +124,15 @@ def get_live_data() -> dict:
     # Real trades: ONLY with real order IDs (source of truth)
     real_trades = []
     try:
-        real_trades = [dict(r) for r in conn.execute("""
+        real_trades = [
+            dict(r)
+            for r in conn.execute("""
             SELECT * FROM real_trades
             WHERE order_id_up IS NOT NULL AND order_id_up != ''
                 AND order_id_up NOT LIKE 'dry-%'
             ORDER BY id
-        """).fetchall()]
+        """).fetchall()
+        ]
     except Exception:
         pass
 
@@ -146,18 +163,24 @@ def get_live_data() -> dict:
     }
 
     # Latest polls
-    polls = [dict(r) for r in conn.execute(
-        "SELECT * FROM polls ORDER BY id DESC LIMIT 50"
-    ).fetchall()]
+    polls = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM polls ORDER BY id DESC LIMIT 50"
+        ).fetchall()
+    ]
     latest_per_coin = {}
     for p in polls:
         if p["coin"] not in latest_per_coin:
             latest_per_coin[p["coin"]] = p
 
     # Legacy trades (for old dashboard compat)
-    trades = [dict(r) for r in conn.execute(
-        "SELECT * FROM trades WHERE reason LIKE 'REAL:%' ORDER BY id DESC LIMIT 200"
-    ).fetchall()]
+    trades = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM trades WHERE reason LIKE 'REAL:%' ORDER BY id DESC LIMIT 200"
+        ).fetchall()
+    ]
 
     conn.close()
 
@@ -209,7 +232,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     print(f"Dashboard server starting on http://localhost:{PORT}")
     print(f"Serving files from: {DASHBOARD_DIR}")
-    with socketserver.TCPServer(("", PORT), DashboardHandler) as httpd:
+
+    class ThreadingServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    with ThreadingServer(("", PORT), DashboardHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
