@@ -85,6 +85,19 @@ footer{text-align:center;padding:24px;color:var(--muted);font-size:12px;border-t
 
 <div id="onchain-warn" class="warn-box" style="display:none"></div>
 
+<div class="filter-row" style="margin-bottom:16px">
+  <span style="color:var(--muted);font-size:12px;font-weight:600">PERIODO:</span>
+  <select id="f-time">
+    <option value="all">Todo</option>
+    <option value="1h">Ultima hora</option>
+    <option value="6h">Ultimas 6h</option>
+    <option value="24h" selected>Ultimas 24h</option>
+    <option value="7d">Ultima semana</option>
+    <option value="30d">Ultimo mes</option>
+  </select>
+  <span class="count" id="time-range-info"></span>
+</div>
+
 <h3 style="color:var(--muted);margin-bottom:12px;font-size:13px">RENDIMIENTO POR MONEDA</h3>
 <div class="coin-row" id="coin-row"></div>
 
@@ -155,12 +168,46 @@ async function fetchData(){
   try{const r=await fetch(API);if(!r.ok)throw 0;return await r.json()}catch(e){return null}
 }
 
+// Time filter helper
+function filterByTime(trades, period){
+  if(period==='all') return trades;
+  const now = new Date();
+  const ms = {
+    '1h': 3600000, '6h': 21600000, '24h': 86400000,
+    '7d': 604800000, '30d': 2592000000
+  }[period] || 86400000;
+  const cutoff = new Date(now.getTime() - ms);
+  return trades.filter(t=>{
+    const d = new Date((t.created_at||'').replace(' ','T'));
+    return d >= cutoff;
+  });
+}
+
+// Format timestamp for chart labels
+function fmtTs(ts, short){
+  if(!ts) return '?';
+  const d = new Date(ts.replace(' ','T'));
+  if(isNaN(d)) return ts.slice(11,16)||'?';
+  const hm = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+  if(short) return hm;
+  return hm+' '+d.getDate()+'/'+(d.getMonth()+1);
+}
+
 function render(D){
   if(!D)return;
   DATA=D;
-  const rt = D.real_trades || [];
+  const allTrades = D.real_trades || [];
   const port = D.portfolio || {};
   const onchain = D.onchain || {};
+  const period = document.getElementById('f-time').value;
+
+  // Filter trades by time period
+  const rt = filterByTime(allTrades, period);
+
+  // Show time range info
+  const timeInfo = document.getElementById('time-range-info');
+  if(period==='all') timeInfo.textContent = `${rt.length} trades totales`;
+  else timeInfo.textContent = `${rt.length} trades en periodo (${allTrades.length} totales)`;
 
   document.getElementById('update-time').textContent = D.generated_at ? D.generated_at.replace('T',' ').slice(0,19) : '--';
 
@@ -169,25 +216,29 @@ function render(D){
   if(D.trading_mode==='real' && !D.dry_run){badge.textContent='LIVE';badge.className='badge badge-live'}
   else{badge.textContent='DRY RUN';badge.className='badge badge-dry'}
 
-  // Stats from real_trades
+  // Stats
   const arbs = rt.filter(t=>t.status==='arb_complete');
   const partials = rt.filter(t=>t.status==='partial');
+  const misses = rt.filter(t=>t.status==='miss');
   const fillRate = rt.length > 0 ? (arbs.length/rt.length*100) : 0;
   const avgArb = arbs.length > 0 ? arbs.reduce((s,t)=>s+(t.net_pnl||0),0)/arbs.length : 0;
 
-  // BALANCE = from MetaMask (on-chain) = SOURCE OF TRUTH
+  // BALANCE = MetaMask on-chain = SOURCE OF TRUTH
   const walletBal = port.balance_wallet || onchain.usdc_e || 0;
   const tokensBal = port.balance_tokens || onchain.tokens_value || 0;
   const totalBal = port.balance_usd || (walletBal + tokensBal);
   const totalPnl = port.total_pnl || (totalBal - STARTING);
   const roi = (totalPnl / STARTING * 100);
 
+  // Period PnL (from filtered trades)
+  const periodPnl = rt.reduce((s,t)=>s+(t.net_pnl||0),0);
+
   // KPIs
   document.getElementById('kpi-row').innerHTML = [
     {l:'Balance Total (MetaMask)',v:fmtUsd2(totalBal),c:totalPnl>=0?'pos':'neg',s:`Wallet: ${fmtUsd2(walletBal)} + Tokens: ${fmtUsd2(tokensBal)}`},
-    {l:'PnL (on-chain)',v:(totalPnl>=0?'+':'')+fmtUsd2(totalPnl),c:totalPnl>=0?'pos':'neg',s:`Inicio: $${STARTING}`},
-    {l:'ROI',v:(roi>=0?'+':'')+roi.toFixed(2)+'%',c:roi>=0?'pos':'neg',s:`sobre $${STARTING}`},
-    {l:'Arb Fill Rate',v:pct(fillRate),c:fillRate>=15?'pos':'neg',s:`${arbs.length} arbs de ${rt.length} trades`},
+    {l:'PnL Total (on-chain)',v:(totalPnl>=0?'+':'')+fmtUsd2(totalPnl),c:totalPnl>=0?'pos':'neg',s:`Inicio: $${STARTING} | ROI: ${(roi>=0?'+':'')+roi.toFixed(1)}%`},
+    {l:'PnL Periodo',v:(periodPnl>=0?'+':'')+fmtUsd2(periodPnl),c:periodPnl>=0?'pos':'neg',s:`${arbs.length} arbs en ${rt.length} trades`},
+    {l:'Arb Fill Rate',v:pct(fillRate),c:fillRate>=15?'pos':'neg',s:`${arbs.length} arbs / ${partials.length} partials / ${misses.length} miss`},
     {l:'Avg Profit/Arb',v:fmtUsd(avgArb),c:'pos',s:`${arbs.length} arbs exitosos`},
     {l:'Wallet USDC.e',v:fmtUsd2(walletBal),c:'',s:`POL: ${fmt(onchain.pol||0,1)}`},
   ].map(k=>`<div class="kpi"><div class="label">${k.l}</div><div class="value ${k.c||''}">${k.v}</div><div class="sub">${k.s||''}</div></div>`).join('');
@@ -199,7 +250,7 @@ function render(D){
     warn.innerHTML = `<strong>${fmtUsd2(tokensBal)} en tokens de Polymarket.</strong> Se auto-redimen cada ciclo. Incluidos en el balance total.`;
   } else { warn.style.display='none'; }
 
-  // Per coin
+  // Per coin (from filtered period)
   const coinData = {};
   rt.forEach(t=>{
     if(!coinData[t.coin])coinData[t.coin]={arbs:0,partials:0,misses:0,pnl:0,total:0};
@@ -220,64 +271,99 @@ function render(D){
     </div>`;
   }).join('');
 
-  // Equity curve
+  // ─── EQUITY CURVE (with timestamps on X axis) ─────────────────
   destroyChart('ch-equity');
   let cumPnl = STARTING;
   const eqData = rt.map(t=>{cumPnl += (t.net_pnl||0); return cumPnl});
   if(eqData.length){
     charts['ch-equity'] = new Chart(document.getElementById('ch-equity'),{
-      type:'line',data:{labels:rt.map((_,i)=>i+1),datasets:[
-        {label:'Balance',data:eqData,borderColor:'var(--blue)',backgroundColor:'rgba(6,182,212,.08)',fill:true,tension:.3,pointRadius:rt.map(t=>t.status==='arb_complete'?4:1),pointBackgroundColor:rt.map(t=>t.status==='arb_complete'?'#22c55e':'#64748b'),borderWidth:2},
-        {label:'Inicio',data:eqData.map(()=>STARTING),borderColor:'#64748b',borderDash:[4,4],pointRadius:0,borderWidth:1},
-      ]},options:{...copts,scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(1)}},x:{display:false}},plugins:{legend:{labels:{color:'#e2e8f0',font:{size:10}}}}}
+      type:'line',data:{
+        labels: rt.map(t=>fmtTs(t.created_at, rt.length>30)),
+        datasets:[
+          {label:'Balance',data:eqData,borderColor:'#06b6d4',backgroundColor:'rgba(6,182,212,.08)',fill:true,tension:.3,
+           pointRadius:rt.map(t=>t.status==='arb_complete'?5:1),
+           pointBackgroundColor:rt.map(t=>t.status==='arb_complete'?'#22c55e':'#64748b'),borderWidth:2},
+          {label:'Inicio $'+STARTING,data:eqData.map(()=>STARTING),borderColor:'#64748b',borderDash:[4,4],pointRadius:0,borderWidth:1},
+        ]},
+      options:{...copts,
+        scales:{
+          y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(1)}},
+          x:{grid:{display:false},ticks:{color:'#475569',font:{size:9},maxRotation:45,autoSkip:true,maxTicksLimit:12}}
+        },
+        plugins:{legend:{labels:{color:'#e2e8f0',font:{size:10}}},
+          tooltip:{callbacks:{title:items=>{const i=items[0].dataIndex;return rt[i]?(rt[i].created_at||'').replace('T',' '):'';}}}}
+      }
     });
   }
 
-  // PnL per trade
+  // ─── PNL PER TRADE (with HH:MM COIN labels) ──────────────────
   destroyChart('ch-pnl');
   const filled = rt.filter(t=>t.net_pnl&&t.net_pnl!==0);
   if(filled.length){
     charts['ch-pnl']=new Chart(document.getElementById('ch-pnl'),{
-      type:'bar',data:{labels:filled.map(t=>t.coin+' #'+t.id),datasets:[{label:'PnL',data:filled.map(t=>t.net_pnl),backgroundColor:filled.map(t=>t.net_pnl>0?'rgba(34,197,94,.7)':'rgba(239,68,68,.5)'),borderRadius:3}]},
-      options:{...copts,plugins:{legend:{display:false}},scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(3)}},x:{grid:{display:false},ticks:{font:{size:8},maxRotation:45}}}}
+      type:'bar',data:{
+        labels:filled.map(t=>fmtTs(t.created_at,true)+' '+t.coin),
+        datasets:[{label:'PnL',data:filled.map(t=>t.net_pnl),
+          backgroundColor:filled.map(t=>t.net_pnl>0?'rgba(34,197,94,.7)':'rgba(239,68,68,.5)'),borderRadius:3}]},
+      options:{...copts,plugins:{legend:{display:false},
+        tooltip:{callbacks:{title:items=>{const i=items[0].dataIndex;return filled[i]?(filled[i].created_at||'').replace('T',' ')+' '+filled[i].coin:'';},
+          label:item=>'PnL: $'+item.raw.toFixed(4)}}},
+        scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(3)}},
+          x:{grid:{display:false},ticks:{font:{size:8},maxRotation:60,autoSkip:true,maxTicksLimit:15}}}}
     });
   }
 
-  // Fill types donut
+  // ─── FILL TYPES DONUT ─────────────────────────────────────────
   destroyChart('ch-fills');
   charts['ch-fills']=new Chart(document.getElementById('ch-fills'),{
     type:'doughnut',data:{labels:[`ARB (${arbs.length})`,`Partial (${partials.length})`,`Miss (${misses.length})`],
-    datasets:[{data:[arbs.length,partials.length,misses.length],backgroundColor:['rgba(34,197,94,.75)','rgba(234,179,8,.5)','rgba(239,68,68,.35)'],borderColor:['#22c55e','#eab308','#ef4444'],borderWidth:2}]},
+    datasets:[{data:[arbs.length,partials.length,misses.length],
+      backgroundColor:['rgba(34,197,94,.75)','rgba(234,179,8,.5)','rgba(239,68,68,.35)'],
+      borderColor:['#22c55e','#eab308','#ef4444'],borderWidth:2}]},
     options:{...copts,cutout:'55%',plugins:{legend:{position:'bottom',labels:{color:'#e2e8f0',font:{size:10}}}}}
   });
 
-  // PnL por moneda bar
+  // ─── PNL POR MONEDA ───────────────────────────────────────────
   destroyChart('ch-coin-pnl');
   const cc = coins.filter(c=>coinData[c]);
   if(cc.length){
     charts['ch-coin-pnl']=new Chart(document.getElementById('ch-coin-pnl'),{
-      type:'bar',data:{labels:cc,datasets:[{label:'PnL',data:cc.map(c=>(coinData[c]||{pnl:0}).pnl),backgroundColor:cc.map(c=>(coinData[c]||{pnl:0}).pnl>=0?'rgba(34,197,94,.6)':'rgba(239,68,68,.5)'),borderRadius:4}]},
-      options:{...copts,plugins:{legend:{display:false}},scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(2)}},x:{grid:{display:false}}}}
+      type:'bar',data:{labels:cc,datasets:[{label:'PnL',
+        data:cc.map(c=>(coinData[c]||{pnl:0}).pnl),
+        backgroundColor:cc.map(c=>(coinData[c]||{pnl:0}).pnl>=0?'rgba(34,197,94,.6)':'rgba(239,68,68,.5)'),borderRadius:4}]},
+      options:{...copts,plugins:{legend:{display:false}},
+        scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(2)}},x:{grid:{display:false}}}}
     });
   }
 
-  // Hourly
+  // ─── ARBS POR HORA (with dd/mm HH:00 labels) ─────────────────
   destroyChart('ch-hourly');
   const hourly = {};
   rt.forEach(t=>{
-    const h = (t.created_at||'').slice(11,13)||'??';
-    if(!hourly[h])hourly[h]={arbs:0,total:0,pnl:0};
-    hourly[h].total++;
-    hourly[h].pnl+=t.net_pnl||0;
-    if(t.status==='arb_complete')hourly[h].arbs++;
+    const key = (t.created_at||'').slice(0,13)||'??'; // "2026-04-02 00"
+    if(!hourly[key])hourly[key]={arbs:0,total:0,pnl:0};
+    hourly[key].total++;
+    hourly[key].pnl+=t.net_pnl||0;
+    if(t.status==='arb_complete')hourly[key].arbs++;
   });
-  const hours = Object.keys(hourly).sort();
-  if(hours.length){
+  const hkeys = Object.keys(hourly).sort();
+  if(hkeys.length){
+    const hlabels = hkeys.map(k=>{
+      const parts = k.split(' ');
+      if(parts.length===2){
+        const date = parts[0].slice(5); // "04-02"
+        return parts[1]+'h '+date.replace('-','/');
+      }
+      return k;
+    });
     charts['ch-hourly']=new Chart(document.getElementById('ch-hourly'),{
-      type:'bar',data:{labels:hours.map(h=>h+'h'),datasets:[
-        {label:'Arbs',data:hours.map(h=>hourly[h].arbs),backgroundColor:'rgba(34,197,94,.6)',borderRadius:4},
-        {label:'Otros',data:hours.map(h=>hourly[h].total-hourly[h].arbs),backgroundColor:'rgba(100,116,139,.3)',borderRadius:4},
-      ]},options:{...copts,plugins:{legend:{labels:{color:'#e2e8f0',font:{size:10}}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{color:'#1e293b'}}}}
+      type:'bar',data:{labels:hlabels,datasets:[
+        {label:'Arbs',data:hkeys.map(h=>hourly[h].arbs),backgroundColor:'rgba(34,197,94,.6)',borderRadius:4},
+        {label:'Otros',data:hkeys.map(h=>hourly[h].total-hourly[h].arbs),backgroundColor:'rgba(100,116,139,.3)',borderRadius:4},
+      ]},options:{...copts,plugins:{legend:{labels:{color:'#e2e8f0',font:{size:10}}},
+        tooltip:{callbacks:{label:item=>`${item.dataset.label}: ${item.raw} | PnL: $${hourly[hkeys[item.dataIndex]].pnl.toFixed(3)}`}}},
+        scales:{x:{stacked:true,grid:{display:false},ticks:{font:{size:9},maxRotation:45}},
+          y:{stacked:true,grid:{color:'#1e293b'}}}}
     });
   }
 
@@ -288,7 +374,8 @@ function render(D){
 function renderTrades(rt){
   const fType = document.getElementById('f-type').value;
   const fCoin = document.getElementById('f-coin').value;
-  let filtered = rt;
+  const period = document.getElementById('f-time').value;
+  let filtered = filterByTime(rt, period);
   if(fType!=='all') filtered = filtered.filter(t=>t.status===fType);
   if(fCoin!=='all') filtered = filtered.filter(t=>t.coin===fCoin);
 
@@ -315,8 +402,9 @@ function renderTrades(rt){
 }
 
 // Filters
-document.getElementById('f-type').onchange = () => { if(DATA) renderTrades(DATA.real_trades||[]) };
-document.getElementById('f-coin').onchange = () => { if(DATA) renderTrades(DATA.real_trades||[]) };
+document.getElementById('f-type').onchange = () => { if(DATA) render(DATA) };
+document.getElementById('f-coin').onchange = () => { if(DATA) render(DATA) };
+document.getElementById('f-time').onchange = () => { if(DATA) render(DATA) };
 
 // Init + auto-refresh
 async function init(){

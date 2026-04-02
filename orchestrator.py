@@ -15,10 +15,10 @@ import random
 from datetime import datetime, timezone
 
 # Fix Windows encoding (safe for TeeLogger)
-if hasattr(sys.stdout, 'buffer') and not isinstance(sys.stdout, io.TextIOWrapper):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'buffer') and not isinstance(sys.stderr, io.TextIOWrapper):
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+if hasattr(sys.stdout, "buffer") and not isinstance(sys.stdout, io.TextIOWrapper):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "buffer") and not isinstance(sys.stderr, io.TextIOWrapper):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 from db import get_db, init_db
 import market_fetcher
@@ -26,8 +26,12 @@ import strategy
 from paper_trader import RealisticPaperTrader
 from scorer import calculate_rapr, format_comparison
 from experiment_manager import (
-    ExperimentManager, reload_strategy, revert_strategy,
-    save_strategy_version, init_results_tsv, STRATEGY_PATH
+    ExperimentManager,
+    reload_strategy,
+    revert_strategy,
+    save_strategy_version,
+    init_results_tsv,
+    STRATEGY_PATH,
 )
 from llm_advisor import apply_mutation
 from upload_data import upload_and_push as _upload_to_vercel
@@ -49,41 +53,62 @@ if TRADING_MODE == "real":
 
 # ─── Configuration ──────────────────────────────────────────────────────
 
-POLL_INTERVAL_SECS = 30      # Poll every 30 seconds
-PHASE_DURATION_MINS = 60     # 60 min per phase (baseline or test)
-COOLDOWN_MINS = 5            # 5 min between experiments
-OBSERVE_MINS = 2             # 2 min warmup (reduced for real mode)
-MIN_TRADES_TO_EVALUATE = 3   # Minimum trades per arm
-VERCEL_UPLOAD_INTERVAL = 600   # Upload to Vercel every 10 min
+POLL_INTERVAL_SECS = 30  # Poll every 30 seconds
+PHASE_DURATION_MINS = 60  # 60 min per phase (baseline or test)
+COOLDOWN_MINS = 5  # 5 min between experiments
+OBSERVE_MINS = 2  # 2 min warmup (reduced for real mode)
+MIN_TRADES_TO_EVALUATE = 3  # Minimum trades per arm
+VERCEL_UPLOAD_INTERVAL = 7200  # Upload to Vercel every 2 hours
 
 _last_vercel_upload = 0  # Timestamp of last Vercel upload
 
 
 def log(msg):
-    ts = datetime.now().strftime('%H:%M:%S')
+    ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
 
 
 # ─── Dashboard data export ──────────────────────────────────────────────
 
+
 def export_dashboard_data():
     conn = get_db()
-    polls = [dict(r) for r in conn.execute(
-        "SELECT * FROM polls ORDER BY id DESC LIMIT 500").fetchall()]
-    trades = [dict(r) for r in conn.execute(
-        "SELECT * FROM trades ORDER BY id DESC LIMIT 200").fetchall()]
-    portfolio = [dict(r) for r in conn.execute(
-        "SELECT * FROM portfolio ORDER BY id DESC LIMIT 100").fetchall()]
-    experiments = [dict(r) for r in conn.execute(
-        "SELECT * FROM experiments ORDER BY id DESC LIMIT 50").fetchall()]
-    markets = [dict(r) for r in conn.execute(
-        "SELECT * FROM markets WHERE active=1").fetchall()]
+    polls = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM polls ORDER BY id DESC LIMIT 500"
+        ).fetchall()
+    ]
+    trades = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM trades ORDER BY id DESC LIMIT 200"
+        ).fetchall()
+    ]
+    portfolio = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM portfolio ORDER BY id DESC LIMIT 100"
+        ).fetchall()
+    ]
+    experiments = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM experiments ORDER BY id DESC LIMIT 50"
+        ).fetchall()
+    ]
+    markets = [
+        dict(r) for r in conn.execute("SELECT * FROM markets WHERE active=1").fetchall()
+    ]
     conn.close()
 
     data = {
         "generated_at": datetime.now().isoformat(),
-        "polls": polls, "trades": trades, "portfolio": portfolio,
-        "experiments": experiments, "markets": markets,
+        "polls": polls,
+        "trades": trades,
+        "portfolio": portfolio,
+        "experiments": experiments,
+        "markets": markets,
     }
     data_path = os.path.join(os.path.dirname(__file__), "data", "dashboard_data.json")
     with open(data_path, "w", encoding="utf-8") as f:
@@ -92,9 +117,13 @@ def export_dashboard_data():
 
 # ─── Phase runner ───────────────────────────────────────────────────────
 
-def run_phase(phase_name: str, duration_mins: float,
-              trader: RealisticPaperTrader,
-              experiment_id: int = None) -> list:
+
+def run_phase(
+    phase_name: str,
+    duration_mins: float,
+    trader: RealisticPaperTrader,
+    experiment_id: int = None,
+) -> list:
     """
     Run a polling phase for a fixed duration.
     Polls markets, runs strategy, simulates limit order fills.
@@ -127,24 +156,36 @@ def run_phase(phase_name: str, duration_mins: float,
             # Save polls to DB
             conn = get_db()
             for obs in observations:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO polls (coin, condition_id, yes_bid, yes_ask,
                         no_bid, no_ask, yes_mid, no_mid, spread_yes, spread_no,
                         total_ask, total_bid, gap, depth_yes_usd, depth_no_usd,
                         binance_price, volatility_1h, experiment_id, phase)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (
-                    obs["coin"], obs["condition_id"],
-                    obs.get("up_best_bid", 0), obs.get("up_best_ask", 0),
-                    obs.get("down_best_bid", 0), obs.get("down_best_ask", 0),
-                    obs.get("implied_up", 0), obs.get("implied_down", 0),
-                    obs.get("spread_yes", 0), obs.get("spread_no", 0),
-                    obs.get("total_ask", 0), obs.get("total_bid", 0),
-                    obs.get("gap", 0),
-                    obs.get("up_depth", 0), obs.get("down_depth", 0),
-                    obs.get("binance_price", 0), obs.get("volatility", 0),
-                    experiment_id, phase_name,
-                ))
+                """,
+                    (
+                        obs["coin"],
+                        obs["condition_id"],
+                        obs.get("up_best_bid", 0),
+                        obs.get("up_best_ask", 0),
+                        obs.get("down_best_bid", 0),
+                        obs.get("down_best_ask", 0),
+                        obs.get("implied_up", 0),
+                        obs.get("implied_down", 0),
+                        obs.get("spread_yes", 0),
+                        obs.get("spread_no", 0),
+                        obs.get("total_ask", 0),
+                        obs.get("total_bid", 0),
+                        obs.get("gap", 0),
+                        obs.get("up_depth", 0),
+                        obs.get("down_depth", 0),
+                        obs.get("binance_price", 0),
+                        obs.get("volatility", 0),
+                        experiment_id,
+                        phase_name,
+                    ),
+                )
             conn.commit()
             conn.close()
 
@@ -167,19 +208,25 @@ def run_phase(phase_name: str, duration_mins: float,
 
                     if trade["arb_filled"]:
                         arb_fills += 1
-                        log(f"  [ARB FILL] {trade['coin']} "
+                        log(
+                            f"  [ARB FILL] {trade['coin']} "
                             f"Up@{trade['bid_up']:.2f}+Down@{trade['bid_down']:.2f}"
                             f"={trade['total_cost']:.2f} "
                             f"pnl=${trade['net_pnl']:+.4f} "
-                            f"(probs: {trade['fill_prob_up']:.0%}/{trade['fill_prob_down']:.0%})")
+                            f"(probs: {trade['fill_prob_up']:.0%}/{trade['fill_prob_down']:.0%})"
+                        )
                     elif trade["filled_up"] or trade["filled_down"]:
                         partial_fills += 1
                         side = "Up" if trade["filled_up"] else "Down"
-                        log(f"  [PARTIAL] {trade['coin']} only {side} filled "
-                            f"pnl=${trade['net_pnl']:+.4f}")
+                        log(
+                            f"  [PARTIAL] {trade['coin']} only {side} filled "
+                            f"pnl=${trade['net_pnl']:+.4f}"
+                        )
                     else:
-                        log(f"  [MISS] {trade['coin']} neither side filled "
-                            f"(probs: {trade['fill_prob_up']:.0%}/{trade['fill_prob_down']:.0%})")
+                        log(
+                            f"  [MISS] {trade['coin']} neither side filled "
+                            f"(probs: {trade['fill_prob_up']:.0%}/{trade['fill_prob_down']:.0%})"
+                        )
 
             # 4. Resolve pending (no-op in v2)
             trader.resolve_trades()
@@ -189,16 +236,21 @@ def run_phase(phase_name: str, duration_mins: float,
                 elapsed = (time.time() - start_time) / 60
                 remaining = duration_mins - elapsed
                 total_pnl = sum(t.get("net_pnl", 0) for t in all_trades)
-                log(f"  --- Poll #{polls_done} | {elapsed:.1f}m elapsed, {remaining:.1f}m left | "
+                log(
+                    f"  --- Poll #{polls_done} | {elapsed:.1f}m elapsed, {remaining:.1f}m left | "
                     f"Orders: {orders_placed} | ARBs: {arb_fills} | Partial: {partial_fills} | "
-                    f"PnL: ${total_pnl:+.4f} ---")
+                    f"PnL: ${total_pnl:+.4f} ---"
+                )
 
             if polls_done % 10 == 0:
                 export_dashboard_data()
 
-            # Upload to Vercel every hour
+            # Upload to Vercel only in paper/research mode
             global _last_vercel_upload
-            if time.time() - _last_vercel_upload >= VERCEL_UPLOAD_INTERVAL:
+            if (
+                TRADING_MODE != "real"
+                and time.time() - _last_vercel_upload >= VERCEL_UPLOAD_INTERVAL
+            ):
                 try:
                     log("  [VERCEL] Uploading dashboard data to Vercel...")
                     _upload_to_vercel()
@@ -225,7 +277,9 @@ def run_phase(phase_name: str, duration_mins: float,
     log(f"\n{'=' * 50}")
     log(f"PHASE {phase_name.upper()} COMPLETE")
     log(f"  Polls: {polls_done} | Orders placed: {orders_placed}")
-    log(f"  ARB fills: {arb_fills} | Partial: {partial_fills} | Fill rate: {fill_rate:.0f}%")
+    log(
+        f"  ARB fills: {arb_fills} | Partial: {partial_fills} | Fill rate: {fill_rate:.0f}%"
+    )
     log(f"  PnL: ${total_pnl:+.6f} | RAPR: {rapr:.6f}")
     log(f"{'=' * 50}\n")
 
@@ -233,6 +287,7 @@ def run_phase(phase_name: str, duration_mins: float,
 
 
 # ─── Mutation system for AutoResearch (LLM-guided) ───────────────────
+
 
 def _propose_mutation(experiment_num: int) -> str:
     """
@@ -258,6 +313,7 @@ def _propose_mutation(experiment_num: int) -> str:
 
 
 # ─── Main loop ──────────────────────────────────────────────────────────
+
 
 def main():
     log("=" * 60)
@@ -285,12 +341,21 @@ def main():
 
     conn = get_db()
     for coin, mkt in markets.items():
-        conn.execute("""
+        conn.execute(
+            """
             INSERT OR REPLACE INTO markets (coin, condition_id, question,
                 token_id_yes, token_id_no, end_date)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (coin, mkt["condition_id"], mkt["question"],
-              mkt["token_up"], mkt["token_down"], mkt["end_date"]))
+        """,
+            (
+                coin,
+                mkt["condition_id"],
+                mkt["question"],
+                mkt["token_up"],
+                mkt["token_down"],
+                mkt["end_date"],
+            ),
+        )
     conn.commit()
     conn.close()
 
@@ -313,11 +378,13 @@ def main():
                 trades = run_phase("live", 5, trader)  # 5 min cycles
                 pnl = sum(t.get("net_pnl", 0) for t in trades)
                 arbs = sum(1 for t in trades if t.get("arb_filled"))
-                log(f"  Cycle #{cycle}: {len(trades)} orders, {arbs} arbs, PnL=${pnl:+.4f}")
+                log(
+                    f"  Cycle #{cycle}: {len(trades)} orders, {arbs} arbs, PnL=${pnl:+.4f}"
+                )
 
                 # Auto-redeem resolved positions (convert tokens to USDC.e)
                 try:
-                    if hasattr(trader, 'auto_redeem'):
+                    if hasattr(trader, "auto_redeem"):
                         trader.auto_redeem()
                 except Exception as re:
                     log(f"  [REDEEM] Error: {re}")
@@ -328,14 +395,14 @@ def main():
                 # Auto-push was overwriting with bad data from DB
             except KeyboardInterrupt:
                 log("\n[STOP] Interrupted")
-                if hasattr(trader, 'cancel_all_open'):
+                if hasattr(trader, "cancel_all_open"):
                     trader.cancel_all_open()
                 export_dashboard_data()
                 break
             except Exception as e:
                 log(f"\n[ERROR] Cycle #{cycle}: {e}")
                 traceback.print_exc()
-                if hasattr(trader, 'cancel_all_open'):
+                if hasattr(trader, "cancel_all_open"):
                     trader.cancel_all_open()
                 time.sleep(30)
         return
@@ -357,8 +424,9 @@ def main():
             market_fetcher._cache_ts = 0
 
             log(f"\n[1/5] Running BASELINE ({PHASE_DURATION_MINS} min)...")
-            baseline_trades = run_phase("baseline", PHASE_DURATION_MINS, trader,
-                                         experiment_id=experiment_num)
+            baseline_trades = run_phase(
+                "baseline", PHASE_DURATION_MINS, trader, experiment_id=experiment_num
+            )
 
             hypothesis = _propose_mutation(experiment_num)
             exp = manager.create_experiment(hypothesis)
@@ -370,23 +438,31 @@ def main():
                 time.sleep(COOLDOWN_MINS * 60)
                 continue
 
-            test_trades = run_phase("test", PHASE_DURATION_MINS, trader,
-                                     experiment_id=experiment_num)
+            test_trades = run_phase(
+                "test", PHASE_DURATION_MINS, trader, experiment_id=experiment_num
+            )
 
             log(f"\n[4/5] Evaluating...")
             hours = PHASE_DURATION_MINS / 60
-            result = manager.evaluate_experiment(exp, baseline_trades, test_trades, hours, hours)
+            result = manager.evaluate_experiment(
+                exp, baseline_trades, test_trades, hours, hours
+            )
 
             keep = result.get("keep", False)
             if result["result"] == "confirm_needed":
                 log(f"\n[CONFIRM] Running confirmation...")
-                confirm_trades = run_phase("confirm", PHASE_DURATION_MINS, trader,
-                                            experiment_id=experiment_num)
-                confirm_result = manager.evaluate_experiment(exp, baseline_trades, confirm_trades, hours, hours)
+                confirm_trades = run_phase(
+                    "confirm", PHASE_DURATION_MINS, trader, experiment_id=experiment_num
+                )
+                confirm_result = manager.evaluate_experiment(
+                    exp, baseline_trades, confirm_trades, hours, hours
+                )
                 keep = confirm_result.get("keep", False)
 
             manager.finalize(exp, keep)
-            log(f"\n  >>> Experiment #{experiment_num}: {'KEPT' if keep else 'DISCARDED'}")
+            log(
+                f"\n  >>> Experiment #{experiment_num}: {'KEPT' if keep else 'DISCARDED'}"
+            )
             export_dashboard_data()
 
             log(f"\n[COOLDOWN] {COOLDOWN_MINS} min...")
@@ -407,8 +483,12 @@ def main():
     portfolio = trader.get_portfolio_summary()
     log(f"\n{'=' * 60}")
     log(f"  SESSION COMPLETE")
-    log(f"  Experiments: {stats['total']} (kept={stats['kept']}, discarded={stats['reverted']})")
-    log(f"  Portfolio: ${portfolio['balance']:.2f} (PnL: ${portfolio['total_pnl']:+.4f})")
+    log(
+        f"  Experiments: {stats['total']} (kept={stats['kept']}, discarded={stats['reverted']})"
+    )
+    log(
+        f"  Portfolio: ${portfolio['balance']:.2f} (PnL: ${portfolio['total_pnl']:+.4f})"
+    )
     log(f"  Win Rate: {portfolio['win_rate']:.1f}%")
     log(f"{'=' * 60}")
 
