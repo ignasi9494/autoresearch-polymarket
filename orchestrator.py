@@ -32,14 +32,29 @@ from experiment_manager import (
 from llm_advisor import apply_mutation
 from upload_data import upload_and_push as _upload_to_vercel
 
+# ─── Load .env for trading mode ──────────────────────────────────────
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(_env_path):
+    with open(_env_path, "r") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
+TRADING_MODE = os.environ.get("TRADING_MODE", "paper")
+
+if TRADING_MODE == "real":
+    from real_trader import RealTrader
+
 # ─── Configuration ──────────────────────────────────────────────────────
 
 POLL_INTERVAL_SECS = 30      # Poll every 30 seconds
 PHASE_DURATION_MINS = 60     # 60 min per phase (baseline or test)
 COOLDOWN_MINS = 5            # 5 min between experiments
-OBSERVE_MINS = 15            # 15 min initial observation (warmup)
+OBSERVE_MINS = 2             # 2 min warmup (reduced for real mode)
 MIN_TRADES_TO_EVALUATE = 3   # Minimum trades per arm
-VERCEL_UPLOAD_INTERVAL = 3600  # Upload to Vercel every 60 min (1 hour)
+VERCEL_UPLOAD_INTERVAL = 600   # Upload to Vercel every 10 min
 
 _last_vercel_upload = 0  # Timestamp of last Vercel upload
 
@@ -246,14 +261,20 @@ def _propose_mutation(experiment_num: int) -> str:
 
 def main():
     log("=" * 60)
-    log("  AUTORESEARCH POLYMARKET v2 - Limit Order Arbitrage")
-    log("  5-min crypto markets | Karpathy AutoResearch loop")
+    if TRADING_MODE == "real":
+        log("  !!! REAL TRADING MODE - LIVE MONEY !!!")
+    else:
+        log("  AUTORESEARCH POLYMARKET v2 - Limit Order Arbitrage")
+    log(f"  Mode: {TRADING_MODE.upper()}")
     log("=" * 60)
 
     init_db()
     init_results_tsv()
 
-    trader = RealisticPaperTrader()
+    if TRADING_MODE == "real":
+        trader = RealTrader(starting_balance=108.32)
+    else:
+        trader = RealisticPaperTrader()
     manager = ExperimentManager()
 
     log("\n[INIT] Discovering current 5-min markets...")
@@ -276,6 +297,56 @@ def main():
     log(f"\n[PHASE 0] Quick observation ({OBSERVE_MINS} min)...")
     run_phase("observe", OBSERVE_MINS, trader)
     export_dashboard_data()
+
+    # ─── REAL MODE: continuous trading, no mutations ─────────────────
+    if TRADING_MODE == "real":
+        log("\n" + "=" * 60)
+        log("  LIVE TRADING - Continuous arb loop. Ctrl+C to stop.")
+        log("=" * 60)
+        cycle = 0
+        while True:
+            cycle += 1
+            try:
+                market_fetcher._market_cache = {}
+                market_fetcher._cache_ts = 0
+                log(f"\n--- Live cycle #{cycle} (5 min) ---")
+                trades = run_phase("live", 5, trader)  # 5 min cycles
+                pnl = sum(t.get("net_pnl", 0) for t in trades)
+                arbs = sum(1 for t in trades if t.get("arb_filled"))
+                log(f"  Cycle #{cycle}: {len(trades)} orders, {arbs} arbs, PnL=${pnl:+.4f}")
+
+                # Auto-redeem resolved positions (convert tokens to USDC.e)
+                try:
+                    if hasattr(trader, 'auto_redeem'):
+                        trader.auto_redeem()
+                except Exception as re:
+                    log(f"  [REDEEM] Error: {re}")
+
+                export_dashboard_data()
+
+                # Upload to Vercel every 10 min
+                global _last_vercel_upload
+                if time.time() - _last_vercel_upload >= VERCEL_UPLOAD_INTERVAL:
+                    try:
+                        log("  [VERCEL] Uploading dashboard data...")
+                        _upload_to_vercel()
+                        _last_vercel_upload = time.time()
+                        log("  [VERCEL] Upload complete")
+                    except Exception as ve:
+                        log(f"  [VERCEL] Upload failed: {ve}")
+            except KeyboardInterrupt:
+                log("\n[STOP] Interrupted")
+                if hasattr(trader, 'cancel_all_open'):
+                    trader.cancel_all_open()
+                export_dashboard_data()
+                break
+            except Exception as e:
+                log(f"\n[ERROR] Cycle #{cycle}: {e}")
+                traceback.print_exc()
+                if hasattr(trader, 'cancel_all_open'):
+                    trader.cancel_all_open()
+                time.sleep(30)
+        return
 
     experiment_num = 0
     log("\n" + "=" * 60)

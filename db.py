@@ -153,6 +153,17 @@ def init_db():
         )
     """)
 
+    # Migrate: add sell columns to real_trades (safe if already exist)
+    for col, coltype in [("sell_attempted", "INTEGER DEFAULT 0"),
+                          ("sell_success", "INTEGER DEFAULT 0"),
+                          ("sell_price", "REAL"),
+                          ("sell_pnl", "REAL"),
+                          ("sell_error", "TEXT")]:
+        try:
+            c.execute(f"ALTER TABLE real_trades ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass  # Column already exists
+
     # Indexes
     c.execute("CREATE INDEX IF NOT EXISTS idx_polls_coin_ts ON polls(coin, timestamp)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_trades_exp ON trades(experiment_id, phase)")

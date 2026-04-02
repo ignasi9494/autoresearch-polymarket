@@ -65,48 +65,58 @@ def get_env_config() -> dict:
     return config
 
 
+STARTING_BALANCE = 108.32
+
+
 def get_live_data() -> dict:
-    """Fetch latest data directly from DB for the API."""
+    """Fetch latest data directly from DB for the API.
+    Only returns VERIFIED real trades (no dry-run, no errors)."""
     conn = get_db()
 
-    # Real trades (SOURCE OF TRUTH for the new dashboard)
+    # Real trades: ONLY with real order IDs (source of truth)
     real_trades = []
     try:
-        real_trades = [dict(r) for r in conn.execute(
-            "SELECT * FROM real_trades ORDER BY id"
-        ).fetchall()]
+        real_trades = [dict(r) for r in conn.execute("""
+            SELECT * FROM real_trades
+            WHERE order_id_up IS NOT NULL AND order_id_up != ''
+                AND order_id_up NOT LIKE 'dry-%'
+            ORDER BY id
+        """).fetchall()]
     except Exception:
         pass
 
-    # Portfolio (latest snapshot)
-    portfolio_row = conn.execute(
-        "SELECT * FROM portfolio ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    portfolio = dict(portfolio_row) if portfolio_row else {}
+    # Calculate portfolio from real trades (NOT from portfolio table which can be stale)
+    arbs = [t for t in real_trades if t.get("status") == "arb_complete"]
+    partials = [t for t in real_trades if t.get("status") == "partial"]
+    total_pnl = sum(t.get("net_pnl", 0) or 0 for t in real_trades)
+    total_fees = sum(t.get("fees", 0) or 0 for t in real_trades)
+    portfolio = {
+        "balance_usd": STARTING_BALANCE + total_pnl,
+        "total_pnl": total_pnl,
+        "total_trades": len(arbs) + len(partials),
+        "total_fees": total_fees,
+        "winning_trades": len(arbs),
+        "losing_trades": len(partials),
+        "starting_balance": STARTING_BALANCE,
+    }
 
-    # Latest polls (for market cards)
+    # Latest polls
     polls = [dict(r) for r in conn.execute(
         "SELECT * FROM polls ORDER BY id DESC LIMIT 50"
     ).fetchall()]
-
     latest_per_coin = {}
     for p in polls:
         if p["coin"] not in latest_per_coin:
             latest_per_coin[p["coin"]] = p
 
-    # Legacy: trades table (for backwards compat with old dashboard)
+    # Legacy trades (for old dashboard compat)
     trades = [dict(r) for r in conn.execute(
-        "SELECT * FROM trades ORDER BY id DESC LIMIT 500"
-    ).fetchall()]
-
-    # Experiments
-    experiments = [dict(r) for r in conn.execute(
-        "SELECT * FROM experiments ORDER BY id DESC LIMIT 50"
+        "SELECT * FROM trades WHERE reason LIKE 'REAL:%' ORDER BY id DESC LIMIT 200"
     ).fetchall()]
 
     conn.close()
 
-    # On-chain balance (best-effort, won't fail)
+    # On-chain balance (best-effort)
     onchain = get_onchain_balance()
 
     # Env config
@@ -122,7 +132,6 @@ def get_live_data() -> dict:
         "latest_per_coin": latest_per_coin,
         "trades": trades,
         "polls": polls[:20],
-        "experiments": experiments,
     }
 
 
@@ -131,20 +140,25 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=DASHBOARD_DIR, **kwargs)
 
     def do_GET(self):
-        if self.path == "/api/data":
-            try:
+        try:
+            if self.path == "/api/data" or self.path.startswith("/api/data?"):
                 data = get_live_data()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps(data, default=str).encode("utf-8"))
-            except Exception as e:
+            else:
+                super().do_GET()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Browser closed connection, normal behavior
+        except Exception as e:
+            try:
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(f"Error: {e}".encode())
-        else:
-            super().do_GET()
+            except Exception:
+                pass
 
     def log_message(self, format, *args):
         pass  # Suppress access logs
