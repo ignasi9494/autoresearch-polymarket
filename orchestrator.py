@@ -324,16 +324,8 @@ def main():
 
                 export_dashboard_data()
 
-                # Upload to Vercel every 10 min
-                global _last_vercel_upload
-                if time.time() - _last_vercel_upload >= VERCEL_UPLOAD_INTERVAL:
-                    try:
-                        log("  [VERCEL] Uploading dashboard data...")
-                        _upload_to_vercel()
-                        _last_vercel_upload = time.time()
-                        log("  [VERCEL] Upload complete")
-                    except Exception as ve:
-                        log(f"  [VERCEL] Upload failed: {ve}")
+                # Vercel push DISABLED in real mode (do manually with: python upload_data.py)
+                # Auto-push was overwriting with bad data from DB
             except KeyboardInterrupt:
                 log("\n[STOP] Interrupted")
                 if hasattr(trader, 'cancel_all_open'):

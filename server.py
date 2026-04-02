@@ -119,22 +119,24 @@ def get_live_data() -> dict:
     except Exception:
         pass
 
-    # On-chain balance = SOURCE OF TRUTH
+    # On-chain balance = ONLY SOURCE OF TRUTH. Never fall back to DB.
     onchain = get_onchain_balance()
-    onchain_total = onchain.get("usdc_e", 0) + onchain.get("tokens_value", 0)
+    wallet_bal = onchain.get("usdc_e", 0)
+    tokens_val = onchain.get("tokens_value", 0)
+    onchain_total = wallet_bal + tokens_val
 
-    # Trade stats from real_trades
+    # Trade stats
     arbs = [t for t in real_trades if t.get("status") == "arb_complete"]
     partials = [t for t in real_trades if t.get("status") == "partial"]
     total_fees = sum(t.get("fees", 0) or 0 for t in real_trades)
 
-    # PnL = on-chain total - starting balance (the REAL number)
-    total_pnl = onchain_total - STARTING_BALANCE if onchain_total > 0 else sum(t.get("net_pnl", 0) or 0 for t in real_trades)
+    # PnL = on-chain total - starting. If on-chain fails, show 0 not fake data.
+    total_pnl = onchain_total - STARTING_BALANCE if onchain_total > 0 else 0
 
     portfolio = {
-        "balance_usd": onchain_total if onchain_total > 0 else STARTING_BALANCE,
-        "balance_wallet": onchain.get("usdc_e", 0),
-        "balance_tokens": onchain.get("tokens_value", 0),
+        "balance_usd": onchain_total,
+        "balance_wallet": wallet_bal,
+        "balance_tokens": tokens_val,
         "total_pnl": total_pnl,
         "total_trades": len(arbs) + len(partials),
         "total_fees": total_fees,
