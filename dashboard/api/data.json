@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-04-02T04:15:49.176741",
+ "generated_at": "2026-04-02T04:19:10.850235",
  "trading_mode": "real",
  "dry_run": false,
  "real_trades": [
@@ -898,22 +898,50 @@
    "sell_price": null,
    "sell_pnl": null,
    "sell_error": null
+  },
+  {
+   "id": 92,
+   "experiment_id": null,
+   "phase": "live",
+   "coin": "SOL",
+   "condition_id": "0x9d08bb1884b5b2cd5882a276219cb1bd9a21a0312fdf450b83ed14952630cdc1",
+   "order_id_up": "0xb3d5e632986b1814c1403d6350323df84cd62da4cad548808eb1f9aed1e1d134",
+   "order_id_down": "0x3a1df6799a9fe054bb7a4e69f9e9dda1fc5aa5d75486636305f9cdad4f234589",
+   "bid_up": 0.51,
+   "bid_down": 0.47,
+   "size_usd": 3.0,
+   "total_cost": 0.98,
+   "fees": 0.010977999999999998,
+   "net_pnl": -0.005,
+   "filled_up": 1,
+   "filled_down": 0,
+   "arb_filled": 0,
+   "status": "partial",
+   "resolution": null,
+   "resolution_pnl": null,
+   "created_at": "2026-04-02 02:16:23",
+   "resolved_at": null,
+   "sell_attempted": 0,
+   "sell_success": 0,
+   "sell_price": null,
+   "sell_pnl": null,
+   "sell_error": null
   }
  ],
  "onchain": {
-  "usdc_e": 90.702496,
+  "usdc_e": 90.641296,
   "pol": 112.68311645495666,
-  "tokens_value": 30.284717620000002
+  "tokens_value": 24.995098
  },
  "portfolio": {
-  "balance_usd": 120.98721362,
-  "balance_wallet": 90.702496,
-  "balance_tokens": 30.284717620000002,
-  "total_pnl": 12.667213620000012,
-  "total_trades": 32,
-  "total_fees": 0.35048199999999996,
+  "balance_usd": 115.636394,
+  "balance_wallet": 90.641296,
+  "balance_tokens": 24.995098,
+  "total_pnl": 7.3163940000000025,
+  "total_trades": 33,
+  "total_fees": 0.36146,
   "winning_trades": 22,
-  "losing_trades": 10,
+  "losing_trades": 11,
   "starting_balance": 108.32
  },
  "latest_per_coin": {
@@ -1034,6 +1062,25 @@
   }
  },
  "trades": [
+  {
+   "id": 17003,
+   "experiment_id": null,
+   "phase": "live",
+   "coin": "SOL",
+   "size_usd": 3.0,
+   "fill_yes": 0.51,
+   "fill_no": 0.47,
+   "total_cost": 0.98,
+   "fees": 0.010977999999999998,
+   "slippage": 0.0,
+   "net_pnl": -0.005,
+   "filled": 0,
+   "reason": "REAL:PARTIAL: Up:0.51+Down:0.47=0.98 edge=0.0090 spread=0.7c depth=11514/10515",
+   "window_end": "2026-04-02T02:15:00Z",
+   "resolved": 0,
+   "resolved_at": null,
+   "open_at": "2026-04-02 02:16:23"
+  },
   {
    "id": 17002,
    "experiment_id": null,
