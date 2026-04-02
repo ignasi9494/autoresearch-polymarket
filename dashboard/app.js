@@ -69,10 +69,11 @@ function renderKPIs(D) {
 
   // Calculate total ARB profit and partial costs
   const arbPnl = allTrades.filter(t => t.filled === 1).reduce((s,t) => s + (t.net_pnl||0), 0);
-  const roi = bal > 0 ? ((bal - 1000) / 1000 * 100) : 0;
+  const STARTING_BALANCE = 108.32;
+  const roi = bal > 0 ? ((bal - STARTING_BALANCE) / STARTING_BALANCE * 100) : 0;
 
   const kpis = [
-    {l:'Balance', v:fmtUsd2(bal), c:bal>=1000?'pos':'neg', s:`ROI: ${roi>=0?'+':''}${roi.toFixed(1)}%`},
+    {l:'Balance', v:fmtUsd2(bal), c:bal>=STARTING_BALANCE?'pos':'neg', s:`ROI: ${roi>=0?'+':''}${roi.toFixed(1)}% (base $${STARTING_BALANCE})`},
     {l:'PnL Neto', v:(pnl>=0?'+':'')+fmtUsd2(pnl), c:pnl>=0?'pos':'neg', s:`ARB profit: ${fmtUsd2(arbPnl)}`},
     {l:'Win Rate', v:pct(wr), c:wr>=30?'pos':'neg', s:`${wins}W / ${losses}L de ${trades}`},
     {l:'ARB Fill Rate', v:pct(fillRate), c:fillRate>=10?'pos':'neg', s:`${arbFills} arbs de ${totalOrders}`},
@@ -329,7 +330,7 @@ function renderTrades(D) {
         {label:'Balance ($)',data:sampled.map(p=>p.balance_usd),
         borderColor:'#06b6d4',backgroundColor:'rgba(6,182,212,.08)',fill:true,tension:.4,
         pointRadius:0,borderWidth:2},
-        {label:'$1,000 baseline',data:sampled.map(()=>1000),
+        {label:'$108.32 baseline',data:sampled.map(()=>108.32),
         borderColor:'#64748b',borderDash:[5,5],pointRadius:0,borderWidth:1,fill:false},
       ]},
       options:{...chartOpts(),scales:{y:{grid:{color:'#1e293b'},ticks:{color:'#64748b',callback:v=>'$'+v.toFixed(0)}},x:{display:false}},plugins:{legend:{labels:{color:'#e2e8f0',font:{size:10}}}}},
