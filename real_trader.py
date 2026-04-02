@@ -5,7 +5,7 @@ Replaces paper_trader.py for real money trading. Same interface so
 orchestrator.py, strategy.py, scorer.py all work without changes.
 
 SAFETY:
-- REAL_MAX_SIZE_PER_SIDE = 3.0 USD hardcoded (override requires code change)
+- REAL_MAX_SIZE_PER_SIDE = 5.0 USD hardcoded (override requires code change)
 - 3 circuit breakers: daily loss, consecutive losses, min balance
 - Kill switch via .env (KILL_SWITCH=true)
 - DRY_RUN mode: builds orders but does NOT send them
@@ -21,8 +21,14 @@ from db import get_db
 # ─── py-clob-client imports (all in one place) ──────────────────────
 try:
     from py_clob_client.client import ClobClient
-    from py_clob_client.clob_types import OrderArgs, MarketOrderArgs, OrderType, OpenOrderParams
+    from py_clob_client.clob_types import (
+        OrderArgs,
+        MarketOrderArgs,
+        OrderType,
+        OpenOrderParams,
+    )
     from py_clob_client.order_builder.constants import BUY, SELL
+
     HAS_CLOB = True
 except ImportError:
     HAS_CLOB = False
@@ -38,18 +44,19 @@ if os.path.exists(_env_path):
                 os.environ.setdefault(_k.strip(), _v.strip())
 
 # ─── Safety constants (hardcoded, NOT configurable via .env) ─────────
-REAL_MAX_SIZE_PER_SIDE = 3.0   # Max USD per side, HARDCODED safety cap
-MIN_SIZE_USD = 0.50            # Don't bother with orders smaller than this
-MIN_SHARES = 5                 # Polymarket minimum order size
-FILL_POLL_INTERVAL = 3.0       # Seconds between fill checks
-FILL_TIMEOUT_BUFFER = 20       # Stop checking fills this many secs before window end
-GAS_COST_ESTIMATE = 0.005      # Estimated gas per order on Polygon
+REAL_MAX_SIZE_PER_SIDE = 5.0  # Max USD per side, HARDCODED safety cap
+MIN_SIZE_USD = 0.50  # Don't bother with orders smaller than this
+MIN_SHARES = 5  # Polymarket minimum order size
+FILL_POLL_INTERVAL = 2.0  # Seconds between fill checks
+FILL_TIMEOUT_BUFFER = 16  # Stop checking fills this many secs before window end
+GAS_COST_ESTIMATE = 0.005  # Estimated gas per order on Polygon
 
 # ─── Configurable via .env ───────────────────────────────────────────
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 MAX_DAILY_LOSS = float(os.environ.get("MAX_DAILY_LOSS_USD", "5.0"))
 MAX_CONSECUTIVE_LOSSES = int(os.environ.get("MAX_CONSECUTIVE_LOSSES", "10"))
 MIN_BALANCE = float(os.environ.get("MIN_BALANCE_USD", "20.0"))
+
 
 # ─── Polymarket fee formula ──────────────────────────────────────────
 def estimate_fee(price: float) -> float:
@@ -59,15 +66,22 @@ def estimate_fee(price: float) -> float:
 
 
 def log(msg):
-    ts = datetime.now().strftime('%H:%M:%S')
+    ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] [REAL] {msg}")
+
+
+def _is_orderbook_missing_error(msg: str) -> bool:
+    s = (msg or "").lower()
+    return "orderbook" in s and "does not exist" in s
 
 
 class RealTrader:
     def __init__(self, starting_balance: float = 100.0):
         # Load portfolio state from DB
         conn = get_db()
-        row = conn.execute("SELECT * FROM portfolio ORDER BY id DESC LIMIT 1").fetchone()
+        row = conn.execute(
+            "SELECT * FROM portfolio ORDER BY id DESC LIMIT 1"
+        ).fetchone()
         if row:
             self.balance = row["balance_usd"]
             self.total_pnl = row["total_pnl"]
@@ -94,8 +108,10 @@ class RealTrader:
         self._init_clob_client()
 
         mode = "DRY RUN" if DRY_RUN else "LIVE"
-        log(f"RealTrader initialized ({mode}) | Balance: ${self.balance:.2f} | "
-            f"Max per side: ${REAL_MAX_SIZE_PER_SIDE}")
+        log(
+            f"RealTrader initialized ({mode}) | Balance: ${self.balance:.2f} | "
+            f"Max per side: ${REAL_MAX_SIZE_PER_SIDE}"
+        )
 
     def _init_clob_client(self):
         """Initialize the Polymarket CLOB client."""
@@ -153,8 +169,13 @@ class RealTrader:
 
     # ─── Core: Execute Limit Arb ─────────────────────────────────────
 
-    def execute_limit_arb(self, decision: dict, observation: dict,
-                          experiment_id: int = None, phase: str = None) -> dict:
+    def execute_limit_arb(
+        self,
+        decision: dict,
+        observation: dict,
+        experiment_id: int = None,
+        phase: str = None,
+    ) -> dict:
         """
         Place a LIMIT ORDER pair (buy Up + buy Down) on Polymarket CLOB.
         Returns trade result dict with same keys as paper_trader.
@@ -174,7 +195,9 @@ class RealTrader:
         if size_usd < MIN_SIZE_USD:
             return None
         if self.balance < size_usd * 2.5:  # 2x for both sides + buffer
-            log(f"  [SKIP] Insufficient balance: ${self.balance:.2f} < ${size_usd * 2.5:.2f}")
+            log(
+                f"  [SKIP] Insufficient balance: ${self.balance:.2f} < ${size_usd * 2.5:.2f}"
+            )
             return None
 
         # ─── Extract market data ─────────────────────────────────────
@@ -189,9 +212,18 @@ class RealTrader:
             log(f"  [SKIP] Missing token IDs for {coin}")
             return None
 
+        # Token IDs from Gamma are numeric strings. Skip clearly invalid IDs.
+        if not str(token_up).isdigit() or not str(token_down).isdigit():
+            log(
+                f"  [SKIP] Invalid token IDs for {coin}: up={token_up} down={token_down}"
+            )
+            return None
+
         # ─── Calculate order sizes in shares ─────────────────────────
         shares_up = max(MIN_SHARES, round(size_usd / bid_up, 2)) if bid_up > 0 else 0
-        shares_down = max(MIN_SHARES, round(size_usd / bid_down, 2)) if bid_down > 0 else 0
+        shares_down = (
+            max(MIN_SHARES, round(size_usd / bid_down, 2)) if bid_down > 0 else 0
+        )
 
         total_cost = bid_up + bid_down
         fee_up = estimate_fee(bid_up)
@@ -208,26 +240,68 @@ class RealTrader:
         try:
             if DRY_RUN or not self.client:
                 # DRY RUN: log but don't send
-                log(f"  [DRY] {coin} Up@{bid_up:.2f}({shares_up:.1f}sh) + "
-                    f"Down@{bid_down:.2f}({shares_down:.1f}sh) = {total_cost:.3f}")
+                log(
+                    f"  [DRY] {coin} Up@{bid_up:.2f}({shares_up:.1f}sh) + "
+                    f"Down@{bid_down:.2f}({shares_down:.1f}sh) = {total_cost:.3f}"
+                )
                 order_id_up = f"dry-up-{int(time.time())}"
                 order_id_down = f"dry-down-{int(time.time())}"
                 from paper_trader import limit_fill_probability
                 import random
-                prob_up = limit_fill_probability(bid_up, implied_up, secs_left,
-                                                 observation.get("volatility", 0.03))
-                prob_down = limit_fill_probability(bid_down, implied_down, secs_left,
-                                                    observation.get("volatility", 0.03))
+
+                prob_up = limit_fill_probability(
+                    bid_up, implied_up, secs_left, observation.get("volatility", 0.03)
+                )
+                prob_down = limit_fill_probability(
+                    bid_down,
+                    implied_down,
+                    secs_left,
+                    observation.get("volatility", 0.03),
+                )
                 filled_up = random.random() < prob_up
                 filled_down = random.random() < prob_down
             else:
                 # REAL: place orders via CLOB
-                order_id_up, order_id_down, filled_up, filled_down = \
-                    self._place_and_monitor(
-                        coin, token_up, token_down,
-                        bid_up, bid_down, shares_up, shares_down,
-                        secs_left, experiment_id, phase
-                    )
+                attempts_left = 2
+                last_exc = None
+                while attempts_left > 0:
+                    try:
+                        order_id_up, order_id_down, filled_up, filled_down = (
+                            self._place_and_monitor(
+                                coin,
+                                token_up,
+                                token_down,
+                                bid_up,
+                                bid_down,
+                                shares_up,
+                                shares_down,
+                                secs_left,
+                                experiment_id,
+                                phase,
+                            )
+                        )
+                        last_exc = None
+                        break
+                    except Exception as e:
+                        last_exc = e
+                        attempts_left -= 1
+                        msg = str(e)
+
+                        # Common live failure: Gamma token becomes stale for CLOB.
+                        # Refresh market tokens once and retry.
+                        if attempts_left > 0 and _is_orderbook_missing_error(msg):
+                            refreshed = self._refresh_market_tokens(coin)
+                            if refreshed:
+                                token_up, token_down, condition_id = refreshed
+                                log(
+                                    f"  [RETRY] Refreshed tokens for {coin}; retrying order placement"
+                                )
+                                continue
+
+                        raise
+
+                if last_exc is not None:
+                    raise last_exc
         except Exception as e:
             error_msg = str(e)
             log(f"  [ERROR] {coin}: {e}")
@@ -239,7 +313,9 @@ class RealTrader:
         filled = filled_up or filled_down
 
         if both_filled:
-            net_pnl = (1.0 - total_cost) / total_cost * size_usd * 2 - total_fees * size_usd / total_cost
+            net_pnl = (
+                1.0 - total_cost
+            ) / total_cost * size_usd * 2 - total_fees * size_usd / total_cost
         elif filled_up and not filled_down:
             net_pnl = -GAS_COST_ESTIMATE  # Cancel other side, only gas lost
         elif filled_down and not filled_up:
@@ -294,14 +370,31 @@ class RealTrader:
             self._daily_pnl += net_pnl
 
         # ─── Save to DB ─────────────────────────────────────────────
-        self._save_to_db(trade, order_id_up, order_id_down, condition_id,
-                         experiment_id, phase, error_msg)
+        self._save_to_db(
+            trade,
+            order_id_up,
+            order_id_down,
+            condition_id,
+            experiment_id,
+            phase,
+            error_msg,
+        )
 
         return trade
 
-    def _place_and_monitor(self, coin, token_up, token_down,
-                           bid_up, bid_down, shares_up, shares_down,
-                           secs_left, experiment_id, phase):
+    def _place_and_monitor(
+        self,
+        coin,
+        token_up,
+        token_down,
+        bid_up,
+        bid_down,
+        shares_up,
+        shares_down,
+        secs_left,
+        experiment_id,
+        phase,
+    ):
         """Place both orders, monitor fills, SELL partials immediately.
         Returns (order_id_up, order_id_down, filled_up, filled_down, sell_result)."""
 
@@ -316,7 +409,9 @@ class RealTrader:
         signed_up = self.client.create_order(order_up)
         resp_up = self.client.post_order(signed_up, OrderType.GTC)
         order_id_up = resp_up.get("orderID", resp_up.get("id", ""))
-        log(f"  [PLACED] Up order: {order_id_up[:16]}... status={resp_up.get('status', '?')}")
+        log(
+            f"  [PLACED] Up order: {order_id_up[:16]}... status={resp_up.get('status', '?')}"
+        )
 
         # Place DOWN order
         log(f"  [ORDER] {coin} Down: {shares_down:.1f} shares @ ${bid_down:.2f}")
@@ -329,7 +424,9 @@ class RealTrader:
         signed_down = self.client.create_order(order_down)
         resp_down = self.client.post_order(signed_down, OrderType.GTC)
         order_id_down = resp_down.get("orderID", resp_down.get("id", ""))
-        log(f"  [PLACED] Down order: {order_id_down[:16]}... status={resp_down.get('status', '?')}")
+        log(
+            f"  [PLACED] Down order: {order_id_down[:16]}... status={resp_down.get('status', '?')}"
+        )
 
         # Check immediate fills
         filled_up = resp_up.get("status") == "matched"
@@ -379,13 +476,40 @@ class RealTrader:
 
         return order_id_up, order_id_down, filled_up, filled_down
 
+    def _refresh_market_tokens(self, coin: str):
+        """Refresh token IDs from current slot market for a coin."""
+        try:
+            import market_fetcher
+
+            market_fetcher._market_cache = {}
+            market_fetcher._cache_ts = 0
+            markets = market_fetcher.discover_markets()
+            m = markets.get(coin)
+            if not m:
+                return None
+
+            up = str(m.get("token_up", ""))
+            down = str(m.get("token_down", ""))
+            cid = m.get("condition_id", "")
+            if not up.isdigit() or not down.isdigit():
+                return None
+            return up, down, cid
+        except Exception as e:
+            log(f"  [WARN] token refresh failed for {coin}: {e}")
+            return None
+
     def _emergency_sell_position(self, token_id, shares, coin, side_name):
         """
         Immediately sell a partial fill position back to the market.
         Uses FOK (fill-or-kill) to sell everything at once.
         Returns: {"success": bool, "sell_price": float, "amount_received": float, "error": str|None}
         """
-        result = {"success": False, "sell_price": 0, "amount_received": 0, "error": None}
+        result = {
+            "success": False,
+            "sell_price": 0,
+            "amount_received": 0,
+            "error": None,
+        }
 
         if not self.client or DRY_RUN:
             # In dry run, simulate a sell with ~3 cent spread loss
@@ -411,7 +535,9 @@ class RealTrader:
                 log(f"  [SELL FAIL] {coin} {side_name}: no buyers in orderbook")
                 return result
 
-            log(f"  [SELL] {coin} {side_name}: {shares:.1f} shares @ ${sell_price:.2f}...")
+            log(
+                f"  [SELL] {coin} {side_name}: {shares:.1f} shares @ ${sell_price:.2f}..."
+            )
 
             # Create market sell order (FOK = fill everything or cancel)
             order = OrderArgs(
@@ -444,14 +570,20 @@ class RealTrader:
                     resp2 = self.client.post_order(signed2, OrderType.FOK)
 
                     if resp2.get("success") or resp2.get("status") == "matched":
-                        amount = float(resp2.get("makingAmount", 0) or shares * worse_price)
+                        amount = float(
+                            resp2.get("makingAmount", 0) or shares * worse_price
+                        )
                         result["success"] = True
                         result["sell_price"] = worse_price
                         result["amount_received"] = amount
-                        log(f"  [SOLD] {coin} {side_name}: ${amount:.2f} received (retry)")
+                        log(
+                            f"  [SOLD] {coin} {side_name}: ${amount:.2f} received (retry)"
+                        )
                     else:
                         result["error"] = f"FOK rejected at ${worse_price}"
-                        log(f"  [SELL FAIL] {coin} {side_name}: no fill at ${worse_price}")
+                        log(
+                            f"  [SELL FAIL] {coin} {side_name}: no fill at ${worse_price}"
+                        )
                 else:
                     result["error"] = "Price too low to sell"
 
@@ -475,56 +607,94 @@ class RealTrader:
         """Public method for orchestrator to call on shutdown."""
         self._safe_cancel_all()
 
-    def _save_to_db(self, trade, order_id_up, order_id_down, condition_id,
-                    experiment_id, phase, error_msg):
+    def _save_to_db(
+        self,
+        trade,
+        order_id_up,
+        order_id_down,
+        condition_id,
+        experiment_id,
+        phase,
+        error_msg,
+    ):
         """Save trade to both legacy trades table and new real_trades table."""
         conn = get_db()
         try:
             # Legacy trades table (for dashboard/scorer compatibility)
             filled = trade["filled"]
             arb_filled = trade["arb_filled"]
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO trades (experiment_id, phase, coin, size_usd, fill_yes, fill_no,
                     total_cost, fees, slippage, net_pnl, filled, reason, window_end)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                experiment_id, phase, trade["coin"], trade["size_usd"],
-                trade["bid_up"], trade["bid_down"],
-                trade["total_cost"], trade["fees"], 0,
-                trade["net_pnl"], 1 if arb_filled else 0,
-                f"REAL:{'ARB' if arb_filled else 'PARTIAL' if filled else 'MISS'}: {trade['reason']}",
-                trade["window_end"],
-            ))
+            """,
+                (
+                    experiment_id,
+                    phase,
+                    trade["coin"],
+                    trade["size_usd"],
+                    trade["bid_up"],
+                    trade["bid_down"],
+                    trade["total_cost"],
+                    trade["fees"],
+                    0,
+                    trade["net_pnl"],
+                    1 if arb_filled else 0,
+                    f"REAL:{'ARB' if arb_filled else 'PARTIAL' if filled else 'MISS'}: {trade['reason']}",
+                    trade["window_end"],
+                ),
+            )
 
             # Real trades table
             status = "arb_complete" if arb_filled else "partial" if filled else "miss"
             if error_msg:
                 status = "error"
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO real_trades (experiment_id, phase, coin, condition_id,
                     order_id_up, order_id_down, bid_up, bid_down, size_usd,
                     total_cost, fees, net_pnl, filled_up, filled_down,
                     arb_filled, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                experiment_id, phase, trade["coin"], condition_id,
-                order_id_up, order_id_down,
-                trade["bid_up"], trade["bid_down"], trade["size_usd"],
-                trade["total_cost"], trade["fees"], trade["net_pnl"],
-                1 if trade["filled_up"] else 0,
-                1 if trade["filled_down"] else 0,
-                1 if arb_filled else 0,
-                status,
-            ))
+            """,
+                (
+                    experiment_id,
+                    phase,
+                    trade["coin"],
+                    condition_id,
+                    order_id_up,
+                    order_id_down,
+                    trade["bid_up"],
+                    trade["bid_down"],
+                    trade["size_usd"],
+                    trade["total_cost"],
+                    trade["fees"],
+                    trade["net_pnl"],
+                    1 if trade["filled_up"] else 0,
+                    1 if trade["filled_down"] else 0,
+                    1 if arb_filled else 0,
+                    status,
+                ),
+            )
 
             # Update portfolio
             if filled:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO portfolio (balance_usd, total_pnl, total_trades,
                         total_fees, winning_trades, losing_trades)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (self.balance, self.total_pnl, self.total_trades,
-                      self.total_fees, self.winning, self.losing))
+                """,
+                    (
+                        self.balance,
+                        self.total_pnl,
+                        self.total_trades,
+                        self.total_fees,
+                        self.winning,
+                        self.losing,
+                    ),
+                )
 
             conn.commit()
         except Exception as e:
@@ -546,6 +716,7 @@ class RealTrader:
                 return []
 
             import requests
+
             resolved = []
             for row in rows:
                 cid = row["condition_id"]
@@ -554,7 +725,8 @@ class RealTrader:
                 try:
                     r = requests.get(
                         "https://gamma-api.polymarket.com/markets",
-                        params={"conditionId": cid}, timeout=5
+                        params={"conditionId": cid},
+                        timeout=5,
                     )
                     markets = r.json()
                     if not markets:
@@ -566,37 +738,52 @@ class RealTrader:
                     # Market resolved - determine PnL
                     outcome_prices = m.get("outcomePrices", "[0,0]")
                     import json
-                    prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
+
+                    prices = (
+                        json.loads(outcome_prices)
+                        if isinstance(outcome_prices, str)
+                        else outcome_prices
+                    )
                     up_resolved = float(prices[0]) > 0.5 if len(prices) > 0 else False
 
                     # Calculate resolution PnL for the partial fill
                     if row["filled_up"] and not row["filled_down"]:
                         # We hold Up tokens
                         if up_resolved:
-                            resolution_pnl = row["size_usd"] / row["bid_up"] * 1.0 - row["size_usd"]
+                            resolution_pnl = (
+                                row["size_usd"] / row["bid_up"] * 1.0 - row["size_usd"]
+                            )
                         else:
                             resolution_pnl = -row["size_usd"]
                     elif row["filled_down"] and not row["filled_up"]:
                         # We hold Down tokens
                         if not up_resolved:
-                            resolution_pnl = row["size_usd"] / row["bid_down"] * 1.0 - row["size_usd"]
+                            resolution_pnl = (
+                                row["size_usd"] / row["bid_down"] * 1.0
+                                - row["size_usd"]
+                            )
                         else:
                             resolution_pnl = -row["size_usd"]
                     else:
                         resolution_pnl = 0
 
                     resolution = "up" if up_resolved else "down"
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE real_trades SET resolution=?, resolution_pnl=?,
                             resolved_at=datetime('now') WHERE id=?
-                    """, (resolution, resolution_pnl, row["id"]))
+                    """,
+                        (resolution, resolution_pnl, row["id"]),
+                    )
 
                     self.balance += resolution_pnl
                     self.total_pnl += resolution_pnl
                     self._daily_pnl += resolution_pnl
 
-                    log(f"  [RESOLVED] {row['coin']} partial fill -> {resolution} | "
-                        f"PnL: ${resolution_pnl:+.4f}")
+                    log(
+                        f"  [RESOLVED] {row['coin']} partial fill -> {resolution} | "
+                        f"PnL: ${resolution_pnl:+.4f}"
+                    )
                     resolved.append(row["id"])
                 except Exception as e:
                     log(f"  [WARN] Resolve check failed for {cid[:16]}: {e}")
@@ -609,7 +796,9 @@ class RealTrader:
     # ─── Portfolio ───────────────────────────────────────────────────
 
     def get_portfolio_summary(self) -> dict:
-        win_rate = (self.winning / self.total_trades * 100) if self.total_trades > 0 else 0
+        win_rate = (
+            (self.winning / self.total_trades * 100) if self.total_trades > 0 else 0
+        )
         return {
             "balance": self.balance,
             "total_pnl": self.total_pnl,
@@ -637,8 +826,11 @@ class RealTrader:
 
         try:
             # 1. Get all positions from Polymarket
-            r = requests.get("https://data-api.polymarket.com/positions",
-                           params={"user": wallet}, timeout=10)
+            r = requests.get(
+                "https://data-api.polymarket.com/positions",
+                params={"user": wallet},
+                timeout=10,
+            )
             positions = r.json()
             if not positions:
                 return 0
@@ -656,24 +848,31 @@ class RealTrader:
 
             # 3. Redeem each condition ID
             from web3 import Web3
+
             rpc = os.environ.get("POLYGON_RPC", "https://polygon-pokt.nodies.app")
             w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 15}))
             if not w3.is_connected():
                 return 0
 
             CTF = Web3.to_checksum_address("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045")
-            USDC_E = Web3.to_checksum_address("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
+            USDC_E = Web3.to_checksum_address(
+                "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+            )
             WALLET_CS = Web3.to_checksum_address(wallet)
-            ZERO = b'\x00' * 32
-            REDEEM_ABI = [{
-                'inputs': [
-                    {'name': 'collateralToken', 'type': 'address'},
-                    {'name': 'parentCollectionId', 'type': 'bytes32'},
-                    {'name': 'conditionId', 'type': 'bytes32'},
-                    {'name': 'indexSets', 'type': 'uint256[]'},
-                ],
-                'name': 'redeemPositions', 'outputs': [], 'type': 'function',
-            }]
+            ZERO = b"\x00" * 32
+            REDEEM_ABI = [
+                {
+                    "inputs": [
+                        {"name": "collateralToken", "type": "address"},
+                        {"name": "parentCollectionId", "type": "bytes32"},
+                        {"name": "conditionId", "type": "bytes32"},
+                        {"name": "indexSets", "type": "uint256[]"},
+                    ],
+                    "name": "redeemPositions",
+                    "outputs": [],
+                    "type": "function",
+                }
+            ]
             ctf = w3.eth.contract(address=CTF, abi=REDEEM_ABI)
             private_key = os.environ.get("PRIVATE_KEY", "")
 
@@ -686,13 +885,19 @@ class RealTrader:
                     cid_bytes = bytes.fromhex(cid[2:] if cid.startswith("0x") else cid)
                     tx = ctf.functions.redeemPositions(
                         USDC_E, ZERO, cid_bytes, [1, 2]
-                    ).build_transaction({
-                        "chainId": 137, "from": WALLET_CS, "nonce": nonce,
-                        "gas": 300000,
-                        "maxFeePerGas": w3.to_wei(200, "gwei"),
-                        "maxPriorityFeePerGas": w3.to_wei(50, "gwei"),
-                    })
-                    signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
+                    ).build_transaction(
+                        {
+                            "chainId": 137,
+                            "from": WALLET_CS,
+                            "nonce": nonce,
+                            "gas": 300000,
+                            "maxFeePerGas": w3.to_wei(200, "gwei"),
+                            "maxPriorityFeePerGas": w3.to_wei(50, "gwei"),
+                        }
+                    )
+                    signed = w3.eth.account.sign_transaction(
+                        tx, private_key=private_key
+                    )
                     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
                     receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
                     if receipt["status"] == 1:
