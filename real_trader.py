@@ -319,6 +319,7 @@ class RealTrader:
         both_filled = filled_up and filled_down
         filled = filled_up or filled_down
         sell_ok = sell_result and sell_result.get("success", False)
+        held = sell_result and sell_result.get("held", False) if sell_result else False
 
         if both_filled:
             net_pnl = (
@@ -329,8 +330,15 @@ class RealTrader:
             buy_cost = shares_up * bid_up if filled_up else shares_down * bid_down
             sell_received = sell_result.get("amount_received", 0)
             net_pnl = sell_received - buy_cost - GAS_COST_ESTIMATE * 2
-        elif filled and not sell_ok:
-            # Partial + sell failed: token stuck, assume worst case
+        elif filled and held:
+            # Partial + HELD: token kept because price is favorable
+            # Estimate PnL from current price (will be finalized at resolution)
+            buy_price = bid_up if filled_up else bid_down
+            cur_price = sell_result.get("cur_price", buy_price)
+            shares = shares_up if filled_up else shares_down
+            net_pnl = (cur_price - buy_price) * shares - GAS_COST_ESTIMATE
+        elif filled and not sell_ok and not held:
+            # Partial + sell failed: token stuck
             net_pnl = -(shares_up * bid_up if filled_up else shares_down * bid_down)
         else:
             net_pnl = 0.0
@@ -473,14 +481,23 @@ class RealTrader:
             except Exception as e:
                 log(f"  [WARN] Fill check error: {e}")
 
-        # Handle partial fills: CANCEL unfilled + SELL filled immediately
+        # Handle partial fills: CANCEL unfilled + smart SELL/HOLD
+        HOLD_THRESHOLD = 0.05  # Hold if current price > buy price + this
         if filled_up and not filled_down:
             try:
                 self.client.cancel(order_id_down)
                 log(f"  [CANCEL] Down order cancelled")
             except Exception as e:
                 log(f"  [WARN] Cancel down failed: {e}")
-            sell_result = self._emergency_sell_position(token_up, shares_up, coin, "Up")
+            # Smart decision: check current price before selling
+            cur_price = self._get_current_bid(token_up)
+            if cur_price > bid_up + HOLD_THRESHOLD:
+                log(f"  [HOLD] Up token @ ${cur_price:.2f} > buy ${bid_up:.2f} + ${HOLD_THRESHOLD} -> keeping (likely winner)")
+                sell_result = {"success": False, "sell_price": 0, "amount_received": 0,
+                               "error": "HOLD: price favorable", "held": True, "cur_price": cur_price}
+            else:
+                log(f"  [SELL] Up token @ ${cur_price:.2f} <= buy ${bid_up:.2f} + ${HOLD_THRESHOLD} -> selling")
+                sell_result = self._emergency_sell_position(token_up, shares_up, coin, "Up")
 
         elif filled_down and not filled_up:
             try:
@@ -488,7 +505,14 @@ class RealTrader:
                 log(f"  [CANCEL] Up order cancelled")
             except Exception as e:
                 log(f"  [WARN] Cancel up failed: {e}")
-            sell_result = self._emergency_sell_position(token_down, shares_down, coin, "Down")
+            cur_price = self._get_current_bid(token_down)
+            if cur_price > bid_down + HOLD_THRESHOLD:
+                log(f"  [HOLD] Down token @ ${cur_price:.2f} > buy ${bid_down:.2f} + ${HOLD_THRESHOLD} -> keeping (likely winner)")
+                sell_result = {"success": False, "sell_price": 0, "amount_received": 0,
+                               "error": "HOLD: price favorable", "held": True, "cur_price": cur_price}
+            else:
+                log(f"  [SELL] Down token @ ${cur_price:.2f} <= buy ${bid_down:.2f} + ${HOLD_THRESHOLD} -> selling")
+                sell_result = self._emergency_sell_position(token_down, shares_down, coin, "Down")
 
         elif not filled_up and not filled_down:
             for oid in [order_id_up, order_id_down]:
@@ -521,6 +545,19 @@ class RealTrader:
         except Exception as e:
             log(f"  [WARN] token refresh failed for {coin}: {e}")
             return None
+
+    def _get_current_bid(self, token_id):
+        """Get current best bid price for a token. Returns 0 if unavailable."""
+        if not self.client or DRY_RUN:
+            return 0.50  # Dry run: assume mid
+        try:
+            book = self.client.get_order_book(token_id)
+            bids = book.get("bids", [])
+            if bids:
+                return float(bids[0]["price"])
+        except Exception:
+            pass
+        return 0.0
 
     def _emergency_sell_position(self, token_id, shares, coin, side_name):
         """
