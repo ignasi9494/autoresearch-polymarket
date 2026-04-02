@@ -338,8 +338,9 @@ class RealTrader:
             shares = shares_up if filled_up else shares_down
             net_pnl = (cur_price - buy_price) * shares - GAS_COST_ESTIMATE
         elif filled and not sell_ok and not held:
-            # Partial + sell failed: token stuck
-            net_pnl = -(shares_up * bid_up if filled_up else shares_down * bid_down)
+            # Partial + sell failed or no orderbook: token resolves in 5 min
+            # Don't assume worst case - just register gas cost like before
+            net_pnl = -GAS_COST_ESTIMATE
         else:
             net_pnl = 0.0
 
