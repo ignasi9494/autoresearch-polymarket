@@ -19,83 +19,110 @@ STRATEGY_FILE = os.path.join(os.path.dirname(__file__), "strategy.py")
 RESULTS_FILE = os.path.join(os.path.dirname(__file__), "results.tsv")
 
 
+def get_onchain_balance() -> dict:
+    """Fetch real on-chain USDC.e and POL balances."""
+    try:
+        from web3 import Web3
+        env_path = os.path.join(os.path.dirname(__file__), ".env")
+        wallet = ""
+        if os.path.exists(env_path):
+            with open(env_path) as f:
+                for line in f:
+                    if line.strip().startswith("WALLET_ADDRESS="):
+                        wallet = line.strip().split("=", 1)[1]
+        if not wallet:
+            return {}
+        w3 = Web3(Web3.HTTPProvider("https://polygon-pokt.nodies.app",
+                                     request_kwargs={"timeout": 5}))
+        if not w3.is_connected():
+            return {}
+        wallet = Web3.to_checksum_address(wallet)
+        USDC_E = Web3.to_checksum_address("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
+        ABI = [{"constant": True, "inputs": [{"name": "account", "type": "address"}],
+                "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}],
+                "type": "function"}]
+        usdc = w3.eth.contract(address=USDC_E, abi=ABI)
+        return {
+            "usdc_e": usdc.functions.balanceOf(wallet).call() / 10**6,
+            "pol": float(w3.from_wei(w3.eth.get_balance(wallet), "ether")),
+        }
+    except Exception:
+        return {}
+
+
+def get_env_config() -> dict:
+    """Read trading mode from .env."""
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    config = {"trading_mode": "paper", "dry_run": True}
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("TRADING_MODE="):
+                    config["trading_mode"] = line.split("=", 1)[1]
+                elif line.startswith("DRY_RUN="):
+                    config["dry_run"] = line.split("=", 1)[1].lower() == "true"
+    return config
+
+
 def get_live_data() -> dict:
     """Fetch latest data directly from DB for the API."""
     conn = get_db()
 
-    # Latest polls (last 100)
+    # Real trades (SOURCE OF TRUTH for the new dashboard)
+    real_trades = []
+    try:
+        real_trades = [dict(r) for r in conn.execute(
+            "SELECT * FROM real_trades ORDER BY id"
+        ).fetchall()]
+    except Exception:
+        pass
+
+    # Portfolio (latest snapshot)
+    portfolio_row = conn.execute(
+        "SELECT * FROM portfolio ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    portfolio = dict(portfolio_row) if portfolio_row else {}
+
+    # Latest polls (for market cards)
     polls = [dict(r) for r in conn.execute(
-        "SELECT * FROM polls ORDER BY id DESC LIMIT 100"
+        "SELECT * FROM polls ORDER BY id DESC LIMIT 50"
     ).fetchall()]
 
-    # ALL trades (full history for dashboard)
-    trades = [dict(r) for r in conn.execute(
-        "SELECT * FROM trades ORDER BY id DESC"
-    ).fetchall()]
-
-    # Portfolio history (full for equity curve)
-    portfolio = [dict(r) for r in conn.execute(
-        "SELECT * FROM portfolio ORDER BY id DESC"
-    ).fetchall()]
-
-    # ALL experiments
-    experiments = [dict(r) for r in conn.execute(
-        "SELECT * FROM experiments ORDER BY id DESC"
-    ).fetchall()]
-
-    # Markets
-    markets = [dict(r) for r in conn.execute(
-        "SELECT * FROM markets WHERE active=1"
-    ).fetchall()]
-
-    # Latest poll per coin (for live cards)
     latest_per_coin = {}
     for p in polls:
         if p["coin"] not in latest_per_coin:
             latest_per_coin[p["coin"]] = p
 
-    # Strategy code
-    strategy_code = ""
-    try:
-        with open(STRATEGY_FILE, "r", encoding="utf-8") as f:
-            strategy_code = f.read()
-    except Exception:
-        pass
+    # Legacy: trades table (for backwards compat with old dashboard)
+    trades = [dict(r) for r in conn.execute(
+        "SELECT * FROM trades ORDER BY id DESC LIMIT 500"
+    ).fetchall()]
 
-    # Results TSV
-    results_tsv = ""
-    try:
-        with open(RESULTS_FILE, "r", encoding="utf-8") as f:
-            results_tsv = f.read()
-    except Exception:
-        pass
-
-    # Stats
-    exp_stats = {"total": 0, "kept": 0, "reverted": 0, "crashed": 0}
-    for row in conn.execute(
-        "SELECT status, COUNT(*) as cnt FROM experiments GROUP BY status"
-    ).fetchall():
-        if row["status"] == "completed":
-            exp_stats["kept"] = row["cnt"]
-        elif row["status"] == "reverted":
-            exp_stats["reverted"] = row["cnt"]
-        elif row["status"] == "crashed":
-            exp_stats["crashed"] = row["cnt"]
-        exp_stats["total"] += row["cnt"]
+    # Experiments
+    experiments = [dict(r) for r in conn.execute(
+        "SELECT * FROM experiments ORDER BY id DESC LIMIT 50"
+    ).fetchall()]
 
     conn.close()
 
+    # On-chain balance (best-effort, won't fail)
+    onchain = get_onchain_balance()
+
+    # Env config
+    config = get_env_config()
+
     return {
         "generated_at": datetime.now().isoformat(),
-        "polls": polls[:50],  # Limit for JSON size
+        "trading_mode": config["trading_mode"],
+        "dry_run": config["dry_run"],
+        "real_trades": real_trades,
+        "onchain": onchain,
+        "portfolio": portfolio,
         "latest_per_coin": latest_per_coin,
         "trades": trades,
-        "portfolio": portfolio,
+        "polls": polls[:20],
         "experiments": experiments,
-        "markets": markets,
-        "experiment_stats": exp_stats,
-        "strategy_code": strategy_code,
-        "results_tsv": results_tsv,
     }
 
 

@@ -3,209 +3,328 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AutoResearch Polymarket v4</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1F52C;</text></svg>">
+<title>Polymarket Arb Bot - Live Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0e17;--card:#111827;--border:#1e293b;--text:#e2e8f0;--muted:#64748b;--green:#22c55e;--red:#ef4444;--blue:#06b6d4;--yellow:#eab308;--purple:#a855f7;--accent:#3b82f6}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0}
+
+header{background:linear-gradient(135deg,#0f172a,#1e293b);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-size:28px;font-weight:800;letter-spacing:-1px}
+.logo span{color:var(--blue)}
+.badge{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px}
+.badge-live{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3);animation:pulse 2s infinite}
+.badge-dry{background:rgba(234,179,8,.15);color:var(--yellow);border:1px solid rgba(234,179,8,.3)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.header-meta{font-size:12px;color:var(--muted)}
+
+.container{max-width:1400px;margin:0 auto;padding:20px}
+
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center}
+.kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.kpi .value{font-size:24px;font-weight:800;font-family:'JetBrains Mono',monospace}
+.kpi .sub{font-size:11px;color:var(--muted);margin-top:4px}
+.pos{color:var(--green)}.neg{color:var(--red)}
+
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr}}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+.card h3{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--muted)}
+.chart-box{height:250px;position:relative}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px;color:var(--muted);font-weight:600;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase}
+td{padding:7px 8px;border-bottom:1px solid rgba(30,41,59,.5)}
+tr:hover{background:rgba(6,182,212,.03)}
+
+.chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.5px}
+.chip-green{background:rgba(34,197,94,.15);color:var(--green)}
+.chip-yellow{background:rgba(234,179,8,.15);color:var(--yellow)}
+.chip-red{background:rgba(239,68,68,.12);color:var(--red)}
+.chip-blue{background:rgba(6,182,212,.15);color:var(--blue)}
+.chip-purple{background:rgba(168,85,247,.15);color:var(--purple)}
+
+.coin-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px}
+.coin-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
+.coin-card .name{font-weight:700;font-size:16px;margin-bottom:6px}
+.coin-card .stat{font-size:12px;color:var(--muted);line-height:1.8}
+.coin-card .pnl{font-size:18px;font-weight:800;font-family:'JetBrains Mono',monospace;margin-top:6px}
+@media(max-width:900px){.coin-row{grid-template-columns:repeat(2,1fr)}}
+
+.filter-row{display:flex;gap:8px;margin-bottom:12px;align-items:center}
+.filter-row select{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px}
+.filter-row .count{color:var(--muted);font-size:12px;margin-left:auto}
+
+footer{text-align:center;padding:24px;color:var(--muted);font-size:12px;border-top:1px solid var(--border);margin-top:32px}
+
+.warn-box{background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.2);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--yellow)}
+</style>
 </head>
 <body>
 
-<header class="header">
-  <div class="header-left">
-    <div class="logo">&#x1F52C;</div>
-    <div>
-      <h1>AutoResearch <span class="accent">Polymarket</span></h1>
-      <p class="subtitle">Limit Order Arbitrage | Karpathy AutoResearch Loop | v4</p>
-    </div>
+<header>
+  <div>
+    <div class="logo">&#x26A1; Poly<span>Arb</span> Bot</div>
+    <div class="header-meta">Live arbitrage on Polymarket 5-min crypto markets</div>
   </div>
-  <div class="header-right">
-    <span class="badge badge-green" id="status-badge">LIVE</span>
-    <span class="badge badge-blue" id="phase-badge">IDLE</span>
-    <div class="header-meta">
-      <span id="update-time">--</span>
-      <span id="session-info">--</span>
-    </div>
+  <div style="text-align:right">
+    <span class="badge badge-live" id="mode-badge">LIVE</span>
+    <div class="header-meta" style="margin-top:4px" id="update-time">--</div>
   </div>
 </header>
 
-<div class="info-banner" id="info-banner">
-  <button class="info-close" onclick="this.parentElement.style.display='none'">&times;</button>
-  <h3>Como funciona</h3>
-  <div class="info-grid">
-    <div class="info-item"><span class="info-icon">1</span><div><strong>Observa</strong><br>Cada 30s consulta 5 mercados crypto de 5 min en Polymarket (BTC, ETH, SOL, XRP, DOGE)</div></div>
-    <div class="info-item"><span class="info-icon">2</span><div><strong>Coloca ordenes</strong><br>Pone LIMIT BUY en ambos lados (Up+Down) a precios que sumen &lt;$1.00. Si ambos se llenan = beneficio garantizado</div></div>
-    <div class="info-item"><span class="info-icon">3</span><div><strong>Experimenta</strong><br>Muta parametros aleatoriamente y compara baseline(1h) vs test(1h) con Welch t-test (p&lt;0.10)</div></div>
-    <div class="info-item"><span class="info-icon">4</span><div><strong>Evoluciona</strong><br>Si el test mejora con significancia estadistica, mantiene el cambio. Si no, revierte. Mejora continua autonoma</div></div>
-  </div>
-</div>
+<div class="container">
 
-<div class="kpi-grid" id="kpi-grid"></div>
+<div class="kpi-row" id="kpi-row"></div>
 
-<h2 class="section-title">Mercados Activos <span class="section-badge">5-min windows</span></h2>
-<div class="coin-cards" id="coin-cards"></div>
+<div id="onchain-warn" class="warn-box" style="display:none"></div>
 
-<div class="tabs-container">
-  <div class="tabs">
-    <button class="tab active" data-tab="experiments">Experimentos</button>
-    <button class="tab" data-tab="trades">Trades</button>
-    <button class="tab" data-tab="fills">Fill Analysis</button>
-    <button class="tab" data-tab="performance">Rendimiento</button>
-    <button class="tab" data-tab="strategy">Strategy</button>
-  </div>
-</div>
+<h3 style="color:var(--muted);margin-bottom:12px;font-size:13px">RENDIMIENTO POR MONEDA</h3>
+<div class="coin-row" id="coin-row"></div>
 
-<div class="panel active" id="panel-experiments">
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-header">
-        <h3>Historial de Experimentos</h3>
-        <div class="header-actions">
-          <select id="exp-filter" class="filter-select">
-            <option value="all">Todos</option>
-            <option value="completed">Kept</option>
-            <option value="reverted">Discarded</option>
-            <option value="crashed">Crashed</option>
-          </select>
-          <span class="card-badge" id="exp-count">0</span>
-        </div>
-      </div>
-      <div class="table-scroll" id="exp-table" style="max-height:500px;overflow-y:auto"></div>
-      <div class="pagination" id="exp-pagination"></div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3>PnL por Experimento</h3></div>
-      <div class="chart-box"><canvas id="ch-rapr"></canvas></div>
-    </div>
+<div class="grid-2">
+  <div class="card">
+    <h3>Equity Curve (Balance real)</h3>
+    <div class="chart-box"><canvas id="ch-equity"></canvas></div>
   </div>
   <div class="card">
-    <div class="card-header"><h3>RAPR Evolution (clamped -50/+50)</h3></div>
-    <div class="chart-box"><canvas id="ch-rapr-line"></canvas></div>
-  </div>
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-header"><h3>Experimento Activo</h3></div>
-      <div id="active-exp" class="empty-state">Ninguno activo</div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3>Evolucion de Parametros (KEPT)</h3></div>
-      <div id="param-evolution" class="code-block">Cargando...</div>
-    </div>
+    <h3>PnL por Trade</h3>
+    <div class="chart-box"><canvas id="ch-pnl"></canvas></div>
   </div>
 </div>
 
-<div class="panel" id="panel-trades">
+<div class="grid-3">
   <div class="card">
-    <div class="card-header">
-      <h3>Historial de Trades</h3>
-      <div class="header-actions">
-        <select id="trade-filter-type" class="filter-select">
-          <option value="all">Todos</option>
-          <option value="arb">ARB fills</option>
-          <option value="partial">Partial</option>
-          <option value="miss">Miss</option>
-        </select>
-        <select id="trade-filter-coin" class="filter-select">
-          <option value="all">Todas monedas</option>
-          <option value="BTC">BTC</option>
-          <option value="ETH">ETH</option>
-          <option value="SOL">SOL</option>
-          <option value="XRP">XRP</option>
-          <option value="DOGE">DOGE</option>
-        </select>
-        <span class="card-badge" id="trade-count">0</span>
-      </div>
-    </div>
-    <div class="table-scroll" id="trades-table" style="max-height:500px;overflow-y:auto"></div>
-    <div class="pagination" id="trades-pagination"></div>
-  </div>
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-header"><h3>PnL por Trade (ultimos 50)</h3></div>
-      <div class="chart-box"><canvas id="ch-pnl"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3>Equity Curve</h3></div>
-      <div class="chart-box"><canvas id="ch-equity"></canvas></div>
-    </div>
-  </div>
-</div>
-
-<div class="panel" id="panel-fills">
-  <div class="grid-3">
-    <div class="card">
-      <div class="card-header"><h3>Fill Rate por Tipo</h3></div>
-      <div class="chart-box"><canvas id="ch-fill-types"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3>Fill Rate por Moneda</h3></div>
-      <div class="chart-box"><canvas id="ch-fill-coin"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3>Fill Statistics</h3></div>
-      <div id="fill-stats"></div>
-    </div>
+    <h3>Fill Types</h3>
+    <div class="chart-box"><canvas id="ch-fills"></canvas></div>
   </div>
   <div class="card">
-    <div class="card-header"><h3>Tipos de Fill</h3></div>
-    <div class="info-grid" style="padding:0">
-      <div class="info-item"><span class="info-icon" style="background:rgba(34,197,94,.15);color:#22c55e">OK</span><div><strong>ARB Fill</strong><br>Ambos lados (Up+Down) se llenaron. Beneficio GARANTIZADO: pagamos &lt;$1.00 por $1.00 de payout</div></div>
-      <div class="info-item"><span class="info-icon" style="background:rgba(234,179,8,.15);color:#eab308">1/2</span><div><strong>Partial Fill</strong><br>Solo un lado se lleno. Se CANCELA el otro lado inmediatamente. Coste: solo gas (~$0.008). Sin riesgo direccional</div></div>
-      <div class="info-item"><span class="info-icon" style="background:rgba(239,68,68,.15);color:#ef4444">--</span><div><strong>Miss</strong><br>Ninguno se lleno. Sin coste. La orden expiro sin que nadie vendiera contra nosotros</div></div>
-    </div>
-  </div>
-</div>
-
-<div class="panel" id="panel-performance">
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-header"><h3>PnL por Moneda</h3></div>
-      <div class="chart-box"><canvas id="ch-coin-pnl"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3>ARB Fill Rate por Moneda</h3></div>
-      <div class="chart-box"><canvas id="ch-coin-fillrate"></canvas></div>
-    </div>
-  </div>
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-header"><h3>Edge Distribution (centimos)</h3></div>
-      <div class="chart-box"><canvas id="ch-edges"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3>Desglose de Costes</h3></div>
-      <div id="cost-breakdown"></div>
-    </div>
-  </div>
-</div>
-
-<div class="panel" id="panel-strategy">
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-header"><h3>results.tsv (Experiment Log)</h3></div>
-      <pre id="results-tsv" class="code-block">Loading...</pre>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3>strategy.py (Codigo actual)</h3></div>
-      <pre id="strategy-code" class="code-block">Loading...</pre>
-    </div>
+    <h3>PnL por Moneda</h3>
+    <div class="chart-box"><canvas id="ch-coin-pnl"></canvas></div>
   </div>
   <div class="card">
-    <div class="card-header"><h3>Parametros de la Estrategia</h3></div>
-    <div class="info-grid" style="padding:0">
-      <div class="info-item"><span class="info-icon">$</span><div><strong>MAX_TOTAL_COST</strong><br>Precio maximo combinado Up+Down. Ej: 0.985 = pagamos max $0.985 por $1.00 garantizado = 1.5% edge bruto</div></div>
-      <div class="info-item"><span class="info-icon">~</span><div><strong>BID_SPREAD_BASE</strong><br>Centimos base por debajo del precio implicito. Se ajusta dinamicamente por volatilidad y profundidad del orderbook</div></div>
-      <div class="info-item"><span class="info-icon">&gt;</span><div><strong>MIN_EDGE_CENTS</strong><br>Beneficio minimo por trade despues de fees. Solo opera si el edge supera este umbral</div></div>
-      <div class="info-item"><span class="info-icon">#</span><div><strong>ORDER_SIZE_USD</strong><br>Dolares por lado. Ej: $20 = $20 Up + $20 Down = $40 exposicion total. Escalado por calidad del edge</div></div>
-    </div>
+    <h3>Arbs por Hora</h3>
+    <div class="chart-box"><canvas id="ch-hourly"></canvas></div>
   </div>
 </div>
 
-<footer class="footer">
-  <p>AutoResearch Polymarket v4 &middot; Karpathy AutoResearch &middot; Live Trading on Polygon</p>
-  <p class="footer-sub">Made by Ignasi &middot; Datos actualizados cada hora via git push</p>
+<div class="card">
+  <h3>Historial de Trades (solo reales verificados)</h3>
+  <div class="filter-row">
+    <select id="f-type"><option value="all">Todos</option><option value="arb_complete">ARB</option><option value="partial">Partial</option><option value="miss">Miss</option></select>
+    <select id="f-coin"><option value="all">Todas</option><option value="BTC">BTC</option><option value="ETH">ETH</option><option value="SOL">SOL</option><option value="XRP">XRP</option><option value="DOGE">DOGE</option></select>
+    <span class="count" id="trade-count"></span>
+  </div>
+  <div style="max-height:400px;overflow-y:auto" id="trades-table"></div>
+</div>
+
+</div>
+
+<footer>
+  PolyArb Bot v1 &middot; Live Trading on Polygon &middot; Data from real_trades (verified) + on-chain balance<br>
+  Made by Ignasi &middot; Starting capital: $108.32 USDC.e
 </footer>
 
-<script src="app.js?v=2"></script>
+<script>
+const STARTING = 108.32;
+const API = '/api/data';
+let DATA = null;
+let charts = {};
+
+const fmt = (n,d=2) => n!=null ? Number(n).toFixed(d) : '-';
+const fmtUsd = n => n!=null ? '$'+Number(n).toFixed(4) : '-';
+const fmtUsd2 = n => n!=null ? '$'+Number(n).toFixed(2) : '-';
+const pct = n => n!=null ? Number(n).toFixed(1)+'%' : '-';
+const chip = (t,c) => `<span class="chip chip-${c}">${t}</span>`;
+
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#1e293b';
+Chart.defaults.font.family = "'Inter',sans-serif";
+Chart.defaults.font.size = 11;
+const copts = {responsive:true,maintainAspectRatio:false};
+
+function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id]}}
+
+async function fetchData(){
+  try{const r=await fetch(API);if(!r.ok)throw 0;return await r.json()}catch(e){return null}
+}
+
+function render(D){
+  if(!D)return;
+  DATA=D;
+  const rt = D.real_trades || [];
+  const port = D.portfolio || {};
+  const onchain = D.onchain || {};
+
+  document.getElementById('update-time').textContent = D.generated_at ? D.generated_at.replace('T',' ').slice(0,19) : '--';
+
+  // Mode badge
+  const badge = document.getElementById('mode-badge');
+  if(D.trading_mode==='real' && !D.dry_run){badge.textContent='LIVE';badge.className='badge badge-live'}
+  else{badge.textContent='DRY RUN';badge.className='badge badge-dry'}
+
+  // Stats from real_trades only
+  const arbs = rt.filter(t=>t.status==='arb_complete');
+  const partials = rt.filter(t=>t.status==='partial');
+  const misses = rt.filter(t=>t.status==='miss');
+  const totalPnl = rt.reduce((s,t)=>s+(t.net_pnl||0),0);
+  const arbPnl = arbs.reduce((s,t)=>s+(t.net_pnl||0),0);
+  const partialCost = partials.reduce((s,t)=>s+(t.net_pnl||0),0);
+  const bal = STARTING + totalPnl;
+  const roi = (totalPnl / STARTING * 100);
+  const fillRate = rt.length > 0 ? (arbs.length/rt.length*100) : 0;
+  const avgArb = arbs.length > 0 ? arbPnl/arbs.length : 0;
+
+  // KPIs
+  document.getElementById('kpi-row').innerHTML = [
+    {l:'Balance (calculado)',v:fmtUsd2(bal),c:totalPnl>=0?'pos':'neg',s:`Inicio: $${STARTING}`},
+    {l:'PnL Neto Verificado',v:(totalPnl>=0?'+':'')+fmtUsd2(totalPnl),c:totalPnl>=0?'pos':'neg',s:`ARBs: +${fmtUsd2(arbPnl)} | Partials: ${fmtUsd2(partialCost)}`},
+    {l:'ROI',v:(roi>=0?'+':'')+roi.toFixed(2)+'%',c:roi>=0?'pos':'neg',s:`sobre $${STARTING}`},
+    {l:'Arb Fill Rate',v:pct(fillRate),c:fillRate>=15?'pos':'neg',s:`${arbs.length} arbs de ${rt.length} trades`},
+    {l:'Avg Profit/Arb',v:fmtUsd(avgArb),c:'pos',s:`${arbs.length} arbs exitosos`},
+    {l:'On-Chain USDC.e',v:fmtUsd2(onchain.usdc_e||0),c:'',s:`Wallet real (${fmtUsd2(bal-(onchain.usdc_e||0))} en posiciones)`},
+  ].map(k=>`<div class="kpi"><div class="label">${k.l}</div><div class="value ${k.c||''}">${k.v}</div><div class="sub">${k.s||''}</div></div>`).join('');
+
+  // On-chain warning
+  const locked = bal - (onchain.usdc_e||0);
+  const warn = document.getElementById('onchain-warn');
+  if(locked > 5){
+    warn.style.display='block';
+    warn.innerHTML = `<strong>$${locked.toFixed(2)} bloqueados en posiciones de Polymarket.</strong> Este dinero vuelve cuando las ventanas de 5 min resuelven. No es una perdida.`;
+  } else { warn.style.display='none'; }
+
+  // Per coin
+  const coinData = {};
+  rt.forEach(t=>{
+    if(!coinData[t.coin])coinData[t.coin]={arbs:0,partials:0,misses:0,pnl:0,total:0};
+    coinData[t.coin].total++;
+    coinData[t.coin].pnl += t.net_pnl||0;
+    if(t.status==='arb_complete')coinData[t.coin].arbs++;
+    else if(t.status==='partial')coinData[t.coin].partials++;
+    else coinData[t.coin].misses++;
+  });
+  const coins = ['BTC','ETH','SOL','XRP','DOGE'];
+  document.getElementById('coin-row').innerHTML = coins.map(c=>{
+    const d = coinData[c]||{arbs:0,partials:0,misses:0,pnl:0,total:0};
+    const fr = d.total>0?(d.arbs/d.total*100):0;
+    return `<div class="coin-card">
+      <div class="name">${c}</div>
+      <div class="stat">Arbs: ${d.arbs} | Trades: ${d.total}<br>Fill rate: ${pct(fr)}</div>
+      <div class="pnl ${d.pnl>=0?'pos':'neg'}">${d.pnl>=0?'+':''}${fmtUsd2(d.pnl)}</div>
+    </div>`;
+  }).join('');
+
+  // Equity curve
+  destroyChart('ch-equity');
+  let cumPnl = STARTING;
+  const eqData = rt.map(t=>{cumPnl += (t.net_pnl||0); return cumPnl});
+  if(eqData.length){
+    charts['ch-equity'] = new Chart(document.getElementById('ch-equity'),{
+      type:'line',data:{labels:rt.map((_,i)=>i+1),datasets:[
+        {label:'Balance',data:eqData,borderColor:'var(--blue)',backgroundColor:'rgba(6,182,212,.08)',fill:true,tension:.3,pointRadius:rt.map(t=>t.status==='arb_complete'?4:1),pointBackgroundColor:rt.map(t=>t.status==='arb_complete'?'#22c55e':'#64748b'),borderWidth:2},
+        {label:'Inicio',data:eqData.map(()=>STARTING),borderColor:'#64748b',borderDash:[4,4],pointRadius:0,borderWidth:1},
+      ]},options:{...copts,scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(1)}},x:{display:false}},plugins:{legend:{labels:{color:'#e2e8f0',font:{size:10}}}}}
+    });
+  }
+
+  // PnL per trade
+  destroyChart('ch-pnl');
+  const filled = rt.filter(t=>t.net_pnl&&t.net_pnl!==0);
+  if(filled.length){
+    charts['ch-pnl']=new Chart(document.getElementById('ch-pnl'),{
+      type:'bar',data:{labels:filled.map(t=>t.coin+' #'+t.id),datasets:[{label:'PnL',data:filled.map(t=>t.net_pnl),backgroundColor:filled.map(t=>t.net_pnl>0?'rgba(34,197,94,.7)':'rgba(239,68,68,.5)'),borderRadius:3}]},
+      options:{...copts,plugins:{legend:{display:false}},scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(3)}},x:{grid:{display:false},ticks:{font:{size:8},maxRotation:45}}}}
+    });
+  }
+
+  // Fill types donut
+  destroyChart('ch-fills');
+  charts['ch-fills']=new Chart(document.getElementById('ch-fills'),{
+    type:'doughnut',data:{labels:[`ARB (${arbs.length})`,`Partial (${partials.length})`,`Miss (${misses.length})`],
+    datasets:[{data:[arbs.length,partials.length,misses.length],backgroundColor:['rgba(34,197,94,.75)','rgba(234,179,8,.5)','rgba(239,68,68,.35)'],borderColor:['#22c55e','#eab308','#ef4444'],borderWidth:2}]},
+    options:{...copts,cutout:'55%',plugins:{legend:{position:'bottom',labels:{color:'#e2e8f0',font:{size:10}}}}}
+  });
+
+  // PnL por moneda bar
+  destroyChart('ch-coin-pnl');
+  const cc = coins.filter(c=>coinData[c]);
+  if(cc.length){
+    charts['ch-coin-pnl']=new Chart(document.getElementById('ch-coin-pnl'),{
+      type:'bar',data:{labels:cc,datasets:[{label:'PnL',data:cc.map(c=>(coinData[c]||{pnl:0}).pnl),backgroundColor:cc.map(c=>(coinData[c]||{pnl:0}).pnl>=0?'rgba(34,197,94,.6)':'rgba(239,68,68,.5)'),borderRadius:4}]},
+      options:{...copts,plugins:{legend:{display:false}},scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>'$'+v.toFixed(2)}},x:{grid:{display:false}}}}
+    });
+  }
+
+  // Hourly
+  destroyChart('ch-hourly');
+  const hourly = {};
+  rt.forEach(t=>{
+    const h = (t.created_at||'').slice(11,13)||'??';
+    if(!hourly[h])hourly[h]={arbs:0,total:0,pnl:0};
+    hourly[h].total++;
+    hourly[h].pnl+=t.net_pnl||0;
+    if(t.status==='arb_complete')hourly[h].arbs++;
+  });
+  const hours = Object.keys(hourly).sort();
+  if(hours.length){
+    charts['ch-hourly']=new Chart(document.getElementById('ch-hourly'),{
+      type:'bar',data:{labels:hours.map(h=>h+'h'),datasets:[
+        {label:'Arbs',data:hours.map(h=>hourly[h].arbs),backgroundColor:'rgba(34,197,94,.6)',borderRadius:4},
+        {label:'Otros',data:hours.map(h=>hourly[h].total-hourly[h].arbs),backgroundColor:'rgba(100,116,139,.3)',borderRadius:4},
+      ]},options:{...copts,plugins:{legend:{labels:{color:'#e2e8f0',font:{size:10}}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{color:'#1e293b'}}}}
+    });
+  }
+
+  // Trades table
+  renderTrades(rt);
+}
+
+function renderTrades(rt){
+  const fType = document.getElementById('f-type').value;
+  const fCoin = document.getElementById('f-coin').value;
+  let filtered = rt;
+  if(fType!=='all') filtered = filtered.filter(t=>t.status===fType);
+  if(fCoin!=='all') filtered = filtered.filter(t=>t.coin===fCoin);
+
+  document.getElementById('trade-count').textContent = `${filtered.length} de ${rt.length} trades`;
+
+  const rows = [...filtered].reverse();
+  document.getElementById('trades-table').innerHTML = rows.length===0
+    ? '<div style="text-align:center;padding:20px;color:var(--muted)">Sin trades con estos filtros</div>'
+    : `<table><tr><th>#</th><th>Hora</th><th>Coin</th><th>Up</th><th>Down</th><th>Cost</th><th>PnL</th><th>Tipo</th></tr>
+    ${rows.map(t=>{
+      const type = t.status==='arb_complete'?chip('ARB','green'):t.status==='partial'?chip('PARTIAL','yellow'):chip('MISS','red');
+      const pnl = t.net_pnl||0;
+      const ts = (t.created_at||'').replace('T',' ').slice(0,19);
+      return `<tr>
+        <td>${t.id}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${ts}</td>
+        <td>${chip(t.coin,'purple')}</td>
+        <td>$${fmt(t.bid_up)}</td>
+        <td>$${fmt(t.bid_down)}</td>
+        <td>$${fmt(t.total_cost,3)}</td>
+        <td class="${pnl>0?'pos':pnl<0?'neg':''}" style="font-weight:700">${pnl>0?'+':''}${fmtUsd(pnl)}</td>
+        <td>${type}</td></tr>`;
+    }).join('')}</table>`;
+}
+
+// Filters
+document.getElementById('f-type').onchange = () => { if(DATA) renderTrades(DATA.real_trades||[]) };
+document.getElementById('f-coin').onchange = () => { if(DATA) renderTrades(DATA.real_trades||[]) };
+
+// Init + auto-refresh
+async function init(){
+  const D = await fetchData();
+  if(D) render(D);
+  setInterval(async()=>{const D=await fetchData();if(D)render(D)},30000);
+}
+init();
+</script>
 </body>
 </html>
