@@ -5,7 +5,7 @@ Replaces paper_trader.py for real money trading. Same interface so
 orchestrator.py, strategy.py, scorer.py all work without changes.
 
 SAFETY:
-- REAL_MAX_SIZE_PER_SIDE = 5.0 USD hardcoded (override requires code change)
+- REAL_MAX_SIZE_PER_SIDE = 3.0 USD hardcoded (override requires code change)
 - 3 circuit breakers: daily loss, consecutive losses, min balance
 - Kill switch via .env (KILL_SWITCH=true)
 - DRY_RUN mode: builds orders but does NOT send them
@@ -44,7 +44,7 @@ if os.path.exists(_env_path):
                 os.environ.setdefault(_k.strip(), _v.strip())
 
 # ─── Safety constants (hardcoded, NOT configurable via .env) ─────────
-REAL_MAX_SIZE_PER_SIDE = 5.0  # Max USD per side, HARDCODED safety cap
+REAL_MAX_SIZE_PER_SIDE = 3.0  # Max USD per side, HARDCODED safety cap
 MIN_SIZE_USD = 0.50  # Don't bother with orders smaller than this
 MIN_SHARES = 5  # Polymarket minimum order size
 FILL_POLL_INTERVAL = 2.0  # Seconds between fill checks
